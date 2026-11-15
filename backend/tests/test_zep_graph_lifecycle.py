@@ -1,14 +1,24 @@
 from datetime import datetime
 import threading
 
+import pytest
 from flask import Flask
 from types import SimpleNamespace
 
 from app.api import graph as graph_api
 from app.api import simulation as simulation_api
+from app.config import Config
 from app.models.project import Project, ProjectStatus
 from app.services.simulation_manager import SimulationStatus
 from app.models.task import TaskStatus
+
+
+@pytest.fixture(autouse=True)
+def _neo4j_config(monkeypatch):
+    """图谱构建端点会校验 Neo4j 配置；测试注入假配置避免触网。"""
+    monkeypatch.setattr(Config, "NEO4J_URI", "bolt://localhost:7687")
+    monkeypatch.setattr(Config, "NEO4J_USER", "neo4j")
+    monkeypatch.setattr(Config, "NEO4J_PASSWORD", "test-password")
 
 
 def _project(status, graph_id="graph-1"):
@@ -47,7 +57,6 @@ def test_project_reset_deletes_the_cloud_graph_before_clearing_reference(monkeyp
             events.append(("cloud-delete", graph_id))
 
     monkeypatch.setattr(graph_api, "GraphBuilderService", Builder)
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(
         graph_api.ProjectManager,
         "get_project",
@@ -72,7 +81,6 @@ def test_project_reset_deletes_the_cloud_graph_before_clearing_reference(monkeyp
 
 def test_project_reset_refuses_a_graph_with_an_active_simulation(monkeypatch):
     project = _project(ProjectStatus.GRAPH_COMPLETED)
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(
         graph_api.ProjectManager,
         "get_project",
@@ -118,7 +126,6 @@ def test_graph_delete_cannot_discard_an_updater_during_finalization(monkeypatch)
 
 def test_repeated_build_request_reuses_the_existing_task(monkeypatch):
     project = _project(ProjectStatus.GRAPH_BUILDING)
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(
         graph_api.ProjectManager,
         "get_project",
@@ -152,7 +159,6 @@ def test_stale_build_after_restart_is_recoverable_instead_of_reused(monkeypatch)
     project.zep_batch_id = None
     project.zep_batch_operation_id = None
     saved = []
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(
         graph_api.ProjectManager,
         "get_project",
@@ -183,7 +189,9 @@ def test_stale_build_after_restart_is_recoverable_instead_of_reused(monkeypatch)
     assert saved == [ProjectStatus.FAILED]
 
 
-def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
+def test_stale_build_fails_into_recoverable_state(monkeypatch):
+    """Graphiti 摄取是进程内同步完成的：陈旧构建任务不再可恢复，
+    应标记失败并提示 force 重建。"""
     project = _project(ProjectStatus.GRAPH_BUILDING)
     created_threads = []
 
@@ -192,15 +200,11 @@ def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
             return None
 
         def create_task(self, _description):
-            return "task-resumed"
+            return "task-new"
 
     class Builder:
         def __init__(self, **_kwargs):
             pass
-
-        def get_batch_summary(self, batch_id):
-            assert batch_id == "batch-1"
-            return SimpleNamespace(status="processing")
 
     class Thread:
         def __init__(self, *, target, daemon):
@@ -209,7 +213,6 @@ def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
         def start(self):
             pass
 
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(graph_api, "TaskManager", Tasks)
     monkeypatch.setattr(graph_api, "GraphBuilderService", Builder)
     monkeypatch.setattr(graph_api.threading, "Thread", Thread)
@@ -237,11 +240,10 @@ def test_stale_build_resumes_a_persisted_processing_batch(monkeypatch):
     ):
         body, status = _json_result(graph_api.build_graph())
 
-    assert status == 200
-    assert body["data"]["resumed"] is True
-    assert body["data"]["task_id"] == "task-resumed"
-    assert project.graph_build_task_id == "task-resumed"
-    assert len(created_threads) == 1
+    assert status == 409
+    assert body.get("recoverable") is True
+    assert project.status == ProjectStatus.FAILED
+    assert len(created_threads) == 0
 
 
 def test_project_delete_removes_cloud_graph_before_local_files(monkeypatch):
@@ -256,7 +258,6 @@ def test_project_delete_removes_cloud_graph_before_local_files(monkeypatch):
             events.append(("cloud-delete", graph_id))
 
     monkeypatch.setattr(graph_api, "GraphBuilderService", Builder)
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(
         graph_api.ProjectManager,
         "get_project",
@@ -287,7 +288,6 @@ def test_project_delete_removes_cloud_graph_before_local_files(monkeypatch):
 
 def test_completed_build_request_is_idempotent_without_force(monkeypatch):
     project = _project(ProjectStatus.GRAPH_COMPLETED)
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(
         graph_api.ProjectManager,
         "get_project",
@@ -309,7 +309,6 @@ def test_completed_build_request_is_idempotent_without_force(monkeypatch):
 
 def test_force_must_be_a_json_boolean(monkeypatch):
     project = _project(ProjectStatus.GRAPH_COMPLETED)
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(
         graph_api.ProjectManager,
         "get_project",
@@ -356,7 +355,6 @@ def test_graph_reset_and_memory_start_cannot_cross_between_delete_and_clear(
             return simulation
 
     monkeypatch.setattr(graph_api, "GraphBuilderService", Builder)
-    monkeypatch.setattr(graph_api.Config, "ZEP_API_KEY", "test-key")
     monkeypatch.setattr(
         graph_api.ProjectManager,
         "get_project",

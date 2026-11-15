@@ -17,15 +17,11 @@ from datetime import datetime
 
 from openai import OpenAI
 from ..config import Config
+from ..scenarios import DEFAULT_SCENARIO, get_scenario, Scenario
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
 from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
-from ..utils.zep import (
-    call_zep_read_with_retry,
-    get_zep_client,
-    is_retryable_zep_error,
-    normalize_zep_search_query,
-)
+from .graph_store import get_graph_store
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
@@ -228,48 +224,50 @@ class OasisProfileGenerator:
         "Canada", "Australia", "Brazil", "India", "South Korea"
     ]
     
-    # 个人类型实体（需要生成具体人设）
+    # 个人/群体类型白名单（默认场景值；实际以 self.scenario 为准）
     INDIVIDUAL_ENTITY_TYPES = [
-        "student", "alumni", "professor", "person", "publicfigure", 
+        "student", "alumni", "professor", "person", "publicfigure",
         "expert", "faculty", "official", "journalist", "activist"
     ]
-    
+
     # 群体/机构类型实体（需要生成群体代表人设）
     GROUP_ENTITY_TYPES = [
-        "university", "governmentagency", "organization", "ngo", 
+        "university", "governmentagency", "organization", "ngo",
         "mediaoutlet", "company", "institution", "group", "community"
     ]
-    
+
     def __init__(
-        self, 
+        self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model_name: Optional[str] = None,
         zep_api_key: Optional[str] = None,
-        graph_id: Optional[str] = None
+        graph_id: Optional[str] = None,
+        scenario: Optional[Scenario] = None,
     ):
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model_name = model_name or Config.LLM_MODEL_NAME
-        
+
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
         )
-        
-        # Zep客户端用于检索丰富上下文
-        self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
-        self.zep_client = None
+
+        # 场景包：决定实体角色白名单与人设 prompt
+        self.scenario = scenario or get_scenario(DEFAULT_SCENARIO)
+
+        # 图谱检索用于丰富上下文（Graphiti + Neo4j 后端）
+        self.zep_api_key = zep_api_key  # 兼容旧参数签名，不再使用
         self.graph_id = graph_id
-        
-        if self.zep_api_key:
-            try:
-                self.zep_client = get_zep_client(self.zep_api_key)
-            except Exception as e:
-                logger.warning(f"Zep客户端初始化失败: {e}")
+        self.store = None
+        try:
+            self.store = get_graph_store()
+        except Exception as e:
+            logger.warning(f"图谱检索客户端初始化失败: {e}")
     
     def generate_profile_from_entity(
         self, 
@@ -347,96 +345,82 @@ class OasisProfileGenerator:
     
     def _search_zep_for_entity(self, entity: EntityNode) -> Dict[str, Any]:
         """
-        使用Zep图谱混合搜索功能获取实体相关的丰富信息
-        
-        Zep没有内置混合搜索接口，需要分别搜索edges和nodes然后合并结果。
-        使用并行请求同时搜索，提高效率。
-        
+        使用图谱混合搜索功能获取实体相关的丰富信息（Graphiti + Neo4j 后端）
+
+        分别搜索edges和nodes然后合并结果。使用并行请求同时搜索，提高效率。
+
         Args:
             entity: 实体节点对象
-            
+
         Returns:
             包含facts, node_summaries, context的字典
         """
         import concurrent.futures
-        
-        if not self.zep_client:
+
+        if not self.store:
             return {"facts": [], "node_summaries": [], "context": ""}
-        
+
         entity_name = entity.name
-        
+
         results = {
             "facts": [],
             "node_summaries": [],
             "context": ""
         }
-        
+
         # 必须有graph_id才能进行搜索
         if not self.graph_id:
-            logger.debug(f"跳过Zep检索：未设置graph_id")
+            logger.debug(f"跳过图谱检索：未设置graph_id")
             return results
-        
-        comprehensive_query = normalize_zep_search_query(
-            t('progress.zepSearchQuery', name=entity_name)
-        )
-        
+
+        comprehensive_query = t('progress.zepSearchQuery', name=entity_name)
+
         def search_edges():
-            """搜索边（事实/关系）- 带重试机制"""
-            return call_zep_read_with_retry(
-                lambda: self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=30,
-                        scope="edges",
-                        reranker="rrf"
-                ),
-                operation_name=f"profile edge search ({entity.uuid})",
+            """搜索边（事实/关系）"""
+            return self.store.search(
+                self.graph_id,
+                comprehensive_query,
+                limit=30,
+                scope="edges",
             )
-        
+
         def search_nodes():
-            """搜索节点（实体摘要）- 带重试机制"""
-            return call_zep_read_with_retry(
-                lambda: self.zep_client.graph.search(
-                        query=comprehensive_query,
-                        graph_id=self.graph_id,
-                        limit=20,
-                        scope="nodes",
-                        reranker="rrf"
-                ),
-                operation_name=f"profile node search ({entity.uuid})",
+            """搜索节点（实体摘要）"""
+            return self.store.search(
+                self.graph_id,
+                comprehensive_query,
+                limit=20,
+                scope="nodes",
             )
-        
+
         try:
             # 并行执行edges和nodes搜索
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 edge_future = executor.submit(search_edges)
                 node_future = executor.submit(search_nodes)
-                
+
                 # 获取结果
-                # Each request already has the configured HTTP timeout and
-                # typed retry budget. A second hard-coded 30s future timeout
-                # discarded late successes while the executor still waited.
                 edge_result = edge_future.result()
                 node_result = node_future.result()
-            
+
             # 处理边搜索结果
             all_facts = set()
-            if edge_result and hasattr(edge_result, 'edges') and edge_result.edges:
+            if edge_result and edge_result.edges:
                 for edge in edge_result.edges:
-                    if hasattr(edge, 'fact') and edge.fact:
+                    if edge.fact:
                         all_facts.add(edge.fact)
             results["facts"] = list(all_facts)
-            
+
             # 处理节点搜索结果
             all_summaries = set()
-            if node_result and hasattr(node_result, 'nodes') and node_result.nodes:
+            if node_result and node_result.nodes:
                 for node in node_result.nodes:
-                    if hasattr(node, 'summary') and node.summary:
+                    if node.summary:
                         all_summaries.add(node.summary)
-                    if hasattr(node, 'name') and node.name and node.name != entity_name:
+                    if node.name and node.name != entity_name:
                         all_summaries.add(f"相关实体: {node.name}")
             results["node_summaries"] = list(all_summaries)
-            
+
             # 构建综合上下文
             context_parts = []
             if results["facts"]:
@@ -445,13 +429,13 @@ class OasisProfileGenerator:
                 context_parts.append("相关实体:\n" + "\n".join(f"- {s}" for s in results["node_summaries"][:10]))
             results["context"] = "\n\n".join(context_parts)
             
-            logger.info(f"Zep混合检索完成: {entity_name}, 获取 {len(results['facts'])} 条事实, {len(results['node_summaries'])} 个相关节点")
-            
+            logger.info(f"图谱混合检索完成: {entity_name}, 获取 {len(results['facts'])} 条事实, {len(results['node_summaries'])} 个相关节点")
+
         except Exception as e:
-            logger.warning(f"Zep检索失败 ({entity_name}): {e}")
-            if not is_retryable_zep_error(e):
-                raise
-        
+            # GraphStore 内部已带降级检索；检索失败不阻断人设生成，
+            # 仅以实体的基础上下文继续。
+            logger.warning(f"图谱检索失败 ({entity_name}): {e}")
+
         return results
     
     def _build_entity_context(self, entity: EntityNode) -> str:
@@ -531,11 +515,11 @@ class OasisProfileGenerator:
     
     def _is_individual_entity(self, entity_type: str) -> bool:
         """判断是否是个人类型实体"""
-        return entity_type.lower() in self.INDIVIDUAL_ENTITY_TYPES
-    
+        return entity_type.lower() in {t.lower() for t in self.scenario.individual_entity_types}
+
     def _is_group_entity(self, entity_type: str) -> bool:
         """判断是否是群体/机构类型实体"""
-        return entity_type.lower() in self.GROUP_ENTITY_TYPES
+        return entity_type.lower() in {t.lower() for t in self.scenario.group_entity_types}
     
     def _generate_profile_with_llm(
         self,
@@ -715,9 +699,8 @@ class OasisProfileGenerator:
     
     def _get_system_prompt(self, is_individual: bool) -> str:
         """获取系统提示词"""
-        base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。"
-        return f"{base_prompt}\n\n{get_language_instruction()}"
-    
+        return f"{self.scenario.persona_system_prompt}\n\n{get_language_instruction()}"
+
     def _build_individual_persona_prompt(
         self,
         entity_name: str,
@@ -727,45 +710,18 @@ class OasisProfileGenerator:
         context: str
     ) -> str:
         """构建个人实体的详细人设提示词"""
-        
+
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
-        
-        return f"""为实体生成详细的社交媒体用户人设,最大程度还原已有现实情况。
 
-实体名称: {entity_name}
-实体类型: {entity_type}
-实体摘要: {entity_summary}
-实体属性: {attrs_str}
-
-上下文信息:
-{context_str}
-
-请生成JSON，包含以下字段:
-
-1. bio: 社交媒体简介，200字
-2. persona: 详细人设描述（2000字的纯文本），需包含:
-   - 基本信息（年龄、职业、教育背景、所在地）
-   - 人物背景（重要经历、与事件的关联、社会关系）
-   - 性格特征（MBTI类型、核心性格、情绪表达方式）
-   - 社交媒体行为（发帖频率、内容偏好、互动风格、语言特点）
-   - 立场观点（对话题的态度、可能被激怒/感动的内容）
-   - 独特特征（口头禅、特殊经历、个人爱好）
-   - 个人记忆（人设的重要部分，要介绍这个个体与事件的关联，以及这个个体在事件中的已有动作与反应）
-3. age: 年龄数字（必须是整数）
-4. gender: 性别，必须是英文: "male" 或 "female"
-5. mbti: MBTI类型（如INTJ、ENFP等）
-6. country: 国家（使用中文，如"中国"）
-7. profession: 职业
-8. interested_topics: 感兴趣话题数组
-
-重要:
-- 所有字段值必须是字符串或数字，不要使用换行符
-- persona必须是一段连贯的文字描述
-- {get_language_instruction()} (gender字段必须用英文male/female)
-- 内容要与实体信息保持一致
-- age必须是有效的整数，gender必须是"male"或"female"
-"""
+        return self.scenario.individual_persona_prompt.format(
+            entity_name=entity_name,
+            entity_type=entity_type,
+            entity_summary=entity_summary,
+            attrs_str=attrs_str,
+            context_str=context_str,
+            language_instruction=get_language_instruction(),
+        )
 
     def _build_group_persona_prompt(
         self,
@@ -776,44 +732,18 @@ class OasisProfileGenerator:
         context: str
     ) -> str:
         """构建群体/机构实体的详细人设提示词"""
-        
+
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
-        
-        return f"""为机构/群体实体生成详细的社交媒体账号设定,最大程度还原已有现实情况。
 
-实体名称: {entity_name}
-实体类型: {entity_type}
-实体摘要: {entity_summary}
-实体属性: {attrs_str}
-
-上下文信息:
-{context_str}
-
-请生成JSON，包含以下字段:
-
-1. bio: 官方账号简介，200字，专业得体
-2. persona: 详细账号设定描述（2000字的纯文本），需包含:
-   - 机构基本信息（正式名称、机构性质、成立背景、主要职能）
-   - 账号定位（账号类型、目标受众、核心功能）
-   - 发言风格（语言特点、常用表达、禁忌话题）
-   - 发布内容特点（内容类型、发布频率、活跃时间段）
-   - 立场态度（对核心话题的官方立场、面对争议的处理方式）
-   - 特殊说明（代表的群体画像、运营习惯）
-   - 机构记忆（机构人设的重要部分，要介绍这个机构与事件的关联，以及这个机构在事件中的已有动作与反应）
-3. age: 固定填30（机构账号的虚拟年龄）
-4. gender: 固定填"other"（机构账号使用other表示非个人）
-5. mbti: MBTI类型，用于描述账号风格，如ISTJ代表严谨保守
-6. country: 国家（使用中文，如"中国"）
-7. profession: 机构职能描述
-8. interested_topics: 关注领域数组
-
-重要:
-- 所有字段值必须是字符串或数字，不允许null值
-- persona必须是一段连贯的文字描述，不要使用换行符
-- {get_language_instruction()} (gender字段必须用英文"other")
-- age必须是整数30，gender必须是字符串"other"
-- 机构账号发言要符合其身份定位"""
+        return self.scenario.group_persona_prompt.format(
+            entity_name=entity_name,
+            entity_type=entity_type,
+            entity_summary=entity_summary,
+            attrs_str=attrs_str,
+            context_str=context_str,
+            language_instruction=get_language_instruction(),
+        )
     
     def _generate_profile_rule_based(
         self,

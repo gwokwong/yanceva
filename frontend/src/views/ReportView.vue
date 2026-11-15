@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-left">
-        <div class="brand" @click="router.push('/')">MIROFISH</div>
+        <div class="brand" @click="router.push('/')"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:7px;flex-shrink:0"><rect width="32" height="32" rx="7" fill="#FF4500"/><line x1="8" y1="9" x2="14" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="18" y1="9" x2="24" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="8" y1="16" x2="24" y2="16" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.75"/><line x1="8" y1="23" x2="13" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="19" y1="23" x2="24" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>YANCEVA</div>
       </div>
       
       <div class="header-center">
@@ -21,6 +21,11 @@
       </div>
 
       <div class="header-right">
+        <button
+          v-if="simulationId && currentStatus === 'completed'"
+          class="campaign-entry-btn"
+          @click="campaignVisible = true"
+        >{{ $t('campaign.entryBtn') }}</button>
         <LanguageSwitcher />
         <div class="step-divider"></div>
         <div class="workflow-step">
@@ -34,6 +39,13 @@
         </span>
       </div>
     </header>
+
+    <!-- 对比预演（Campaign）弹层 -->
+    <CampaignPanel
+      :visible="campaignVisible"
+      :simulationId="simulationId"
+      @close="campaignVisible = false"
+    />
 
     <!-- Main Content Area -->
     <main class="content-area">
@@ -69,6 +81,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import GraphPanel from '../components/GraphPanel.vue'
 import Step4Report from '../components/Step4Report.vue'
+import CampaignPanel from '../components/CampaignPanel.vue'
 import { getProject, getGraphData } from '../api/graph'
 import { getSimulation } from '../api/simulation'
 import { getReport } from '../api/report'
@@ -94,6 +107,8 @@ const graphData = ref(null)
 const graphLoading = ref(false)
 const systemLogs = ref([])
 const currentStatus = ref('processing') // processing | completed | error
+// 对比预演弹层
+const campaignVisible = ref(false)
 
 // --- Computed Layout Styles ---
 const leftPanelStyle = computed(() => {
@@ -329,6 +344,21 @@ onMounted(() => {
 .status-indicator.processing .dot { background: #FF9800; animation: pulse 1s infinite; }
 .status-indicator.completed .dot { background: #4CAF50; }
 .status-indicator.error .dot { background: #F44336; }
+
+.campaign-entry-btn {
+  border: 1px solid #FF4500;
+  color: #FF4500;
+  background: #fff;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.campaign-entry-btn:hover {
+  background: #fff4ec;
+}
 
 @keyframes pulse { 50% { opacity: 0.5; } }
 

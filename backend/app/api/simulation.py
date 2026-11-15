@@ -10,6 +10,10 @@ from flask import request, jsonify, send_file
 
 from . import simulation_bp
 from ..config import Config
+from ..scenarios import DEFAULT_SCENARIO, get_scenario
+from ..services.graph_store.neo4j_client import validate_neo4j_config
+from ..services.simulation_manager import filter_and_cap_entities
+from ..services.market_metrics_service import MarketMetricsService
 from ..services.zep_entity_reader import ZepEntityReader
 from ..services.oasis_profile_generator import OasisProfileGenerator
 from ..services.simulation_manager import SimulationManager, SimulationStatus
@@ -87,10 +91,11 @@ def get_graph_entities(graph_id: str):
         enrich: 是否获取相关边信息（默认true）
     """
     try:
-        if not Config.ZEP_API_KEY:
+        config_errors = validate_neo4j_config()
+        if config_errors:
             return jsonify({
                 "success": False,
-                "error": t('api.zepApiKeyMissing')
+                "error": t('api.configError', details="; ".join(config_errors))
             }), 500
         
         entity_types_str = request.args.get('entity_types', '')
@@ -124,10 +129,11 @@ def get_graph_entities(graph_id: str):
 def get_entity_detail(graph_id: str, entity_uuid: str):
     """获取单个实体的详细信息"""
     try:
-        if not Config.ZEP_API_KEY:
+        config_errors = validate_neo4j_config()
+        if config_errors:
             return jsonify({
                 "success": False,
-                "error": t('api.zepApiKeyMissing')
+                "error": t('api.configError', details="; ".join(config_errors))
             }), 500
         
         reader = ZepEntityReader()
@@ -157,10 +163,11 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
 def get_entities_by_type(graph_id: str, entity_type: str):
     """获取指定类型的所有实体"""
     try:
-        if not Config.ZEP_API_KEY:
+        config_errors = validate_neo4j_config()
+        if config_errors:
             return jsonify({
                 "success": False,
-                "error": t('api.zepApiKeyMissing')
+                "error": t('api.configError', details="; ".join(config_errors))
             }), 500
         
         enrich = request.args.get('enrich', 'true').lower() == 'true'
@@ -251,6 +258,7 @@ def create_simulation():
             graph_id=graph_id,
             enable_twitter=data.get('enable_twitter', True),
             enable_reddit=data.get('enable_reddit', True),
+            scenario=getattr(project, 'scenario', DEFAULT_SCENARIO) or DEFAULT_SCENARIO,
         )
         
         return jsonify({
@@ -497,7 +505,19 @@ def prepare_simulation():
         entity_types_list = data.get('entity_types')
         use_llm_for_profiles = data.get('use_llm_for_profiles', True)
         parallel_profile_count = data.get('parallel_profile_count', 5)
-        
+
+        # 场景与 Agent 上限（电商等场景默认过滤知识节点并限制 Agent 数量）
+        scenario = get_scenario(getattr(state, 'scenario', None) or DEFAULT_SCENARIO)
+        max_agents = data.get('max_agents')
+        if max_agents is not None:
+            try:
+                max_agents = max(1, int(max_agents))
+            except (TypeError, ValueError):
+                return jsonify({"success": False, "error": "max_agents 必须是正整数"}), 400
+        logger.info(
+            f"prepare 场景: {scenario.name}, max_agents={max_agents or scenario.default_max_agents}"
+        )
+
         # ========== 同步获取实体数量（在后台任务启动前） ==========
         # 这样前端在调用prepare后立即就能获取到预期Agent总数
         try:
@@ -508,6 +528,10 @@ def prepare_simulation():
                 graph_id=state.graph_id,
                 defined_entity_types=entity_types_list,
                 enrich_with_edges=False  # 不获取边信息，加快速度
+            )
+            # 与正式 prepare 一致地应用场景过滤与数量上限
+            filtered_preview = filter_and_cap_entities(
+                filtered_preview, scenario, max_agents
             )
             # 保存实体数量到状态（供前端立即获取）
             state.entities_count = filtered_preview.filtered_count
@@ -617,7 +641,9 @@ def prepare_simulation():
                     defined_entity_types=entity_types_list,
                     use_llm_for_profiles=use_llm_for_profiles,
                     progress_callback=progress_callback,
-                    parallel_profile_count=parallel_profile_count
+                    parallel_profile_count=parallel_profile_count,
+                    scenario=scenario,
+                    max_agents=max_agents,
                 )
 
                 if result_state.status == SimulationStatus.FAILED:
@@ -2292,6 +2318,99 @@ def get_simulation_comments(simulation_id: str):
         
     except Exception as e:
         logger.error(f"获取评论失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+# ============== 市场指标接口（电商新品上市预演） ==============
+
+@simulation_bp.route('/<simulation_id>/market-metrics', methods=['GET'])
+def get_market_metrics(simulation_id: str):
+    """
+    获取市场指标时间序列（声量/情绪/购买意愿/关键词命中）
+
+    Query参数：
+        classify: 是否对新增内容做 LLM 分类（默认false；会产生少量LLM调用）
+        limit: 单次分类的最大新增条数（默认60，资源保护）
+
+    返回 market_metrics.json 的内容（增量解析 actions.jsonl）。
+    """
+    try:
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": t('api.simulationNotFound', id=simulation_id)
+            }), 404
+
+        classify = request.args.get('classify', 'false').lower() == 'true'
+        try:
+            classify_limit = max(1, min(int(request.args.get('limit', 60)), 200))
+        except (TypeError, ValueError):
+            classify_limit = 60
+
+        service = MarketMetricsService()
+        metrics = service.compute_metrics(
+            simulation_id, classify=classify, classify_limit=classify_limit
+        )
+        return jsonify({"success": True, "data": metrics})
+
+    except Exception as e:
+        logger.error(f"获取市场指标失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/<simulation_id>/survey-probe', methods=['POST'])
+def run_survey_probe(simulation_id: str):
+    """
+    问卷探针：抽样采访消费者 Agent（购买意愿/心理价位/主要顾虑）
+
+    请求（JSON）：
+        {
+            "sample_size": 15,     // 可选，抽样数量（默认15，上限20）
+            "current_round": 42    // 可选，当前轮次（记录用）
+        }
+
+    注意：需要模拟环境处于运行状态（复用 Interview IPC 机制）。
+    """
+    try:
+        manager = SimulationManager()
+        state = manager.get_simulation(simulation_id)
+        if not state:
+            return jsonify({
+                "success": False,
+                "error": t('api.simulationNotFound', id=simulation_id)
+            }), 404
+
+        data = request.get_json() or {}
+        try:
+            sample_size = int(data.get('sample_size', 15))
+        except (TypeError, ValueError):
+            sample_size = 15
+        current_round = data.get('current_round')
+        if current_round is None:
+            current_round = state.current_round
+
+        service = MarketMetricsService()
+        survey = service.run_survey_probe(
+            simulation_id,
+            sample_size=sample_size,
+            current_round=current_round,
+        )
+        return jsonify({"success": True, "data": survey})
+
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"问卷探针失败: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),

@@ -103,6 +103,51 @@
       </div>
     </div>
 
+    <!-- 市场指标面板（电商预演：声量/情绪/购买意愿） -->
+    <div class="metrics-panel" v-if="showMetricsPanel">
+      <div class="metrics-header">
+        <span class="metrics-title">{{ $t('step3.metricsTitle') }}</span>
+        <div class="metrics-actions">
+          <button
+            class="action-btn small probe-btn"
+            :disabled="isProbing || phase === 0"
+            @click="handleSurveyProbe"
+          >
+            <span v-if="isProbing" class="loading-spinner-small"></span>
+            {{ isProbing ? $t('step3.probing') : $t('step3.surveyProbeBtn') }}
+          </button>
+          <button class="metrics-toggle" @click="metricsCollapsed = !metricsCollapsed">
+            {{ metricsCollapsed ? '▾' : '▴' }}
+          </button>
+        </div>
+      </div>
+      <div class="metrics-body" v-show="!metricsCollapsed">
+        <div class="metrics-charts">
+          <div class="metric-chart" v-for="m in metricCharts" :key="m.key">
+            <div class="metric-chart-label">
+              {{ m.label }}
+              <span class="metric-latest" v-if="m.latest !== null && m.latest !== undefined">{{ m.latest }}</span>
+            </div>
+            <svg class="metric-sparkline" viewBox="0 0 120 36" preserveAspectRatio="none">
+              <polyline class="metric-line" :points="m.points" />
+            </svg>
+          </div>
+        </div>
+        <div class="metrics-keywords" v-if="keywordChips.length">
+          <span class="kw-chip" v-for="kw in keywordChips" :key="kw.key">
+            {{ kw.label }} · {{ kw.count }}
+          </span>
+        </div>
+        <div class="survey-result" v-if="surveyResponses.length">
+          <div class="survey-result-title">{{ $t('step3.surveyLatest') }}</div>
+          <div class="survey-answer" v-for="(r, i) in surveyResponses" :key="i">
+            <span class="survey-agent">Agent#{{ r.agent_id }}</span>
+            <span class="survey-text">{{ r.response }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Main Content: Dual Timeline -->
     <div class="main-content-area" ref="scrollContainer">
       <!-- Timeline Header -->
@@ -293,7 +338,9 @@ import {
   startSimulation,
   stopSimulation,
   getRunStatus,
-  getRunStatusDetail
+  getRunStatusDetail,
+  getMarketMetrics,
+  runSurveyProbe
 } from '../api/simulation'
 import { generateReport } from '../api/report'
 
@@ -325,6 +372,96 @@ const runStatus = ref({})
 const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
 const scrollContainer = ref(null)
+
+// 市场指标面板（电商预演）
+const marketMetrics = ref(null)
+const metricsCollapsed = ref(false)
+const isProbing = ref(false)
+const surveyResponses = ref([])
+
+const showMetricsPanel = computed(() => {
+  return phase.value > 0 || (marketMetrics.value && (marketMetrics.value.series || []).length > 0)
+})
+
+// sparkline 数据：最近 60 轮的声量/情绪/购买意愿
+const metricCharts = computed(() => {
+  const series = ((marketMetrics.value && marketMetrics.value.series) || []).slice(-60)
+  const buildPoints = (values, width = 120, height = 36) => {
+    const nums = values.filter(v => typeof v === 'number' && !Number.isNaN(v))
+    if (nums.length < 2) return ''
+    const min = Math.min(...nums)
+    const max = Math.max(...nums)
+    const span = max - min || 1
+    const stepX = width / (nums.length - 1)
+    return nums
+      .map((v, i) => `${(i * stepX).toFixed(1)},${(height - 2 - ((v - min) / span) * (height - 4)).toFixed(1)}`)
+      .join(' ')
+  }
+  const fmt = (v) => (typeof v === 'number' ? v.toFixed(2) : null)
+  const last = (values) => {
+    const nums = values.filter(v => typeof v === 'number' && !Number.isNaN(v))
+    return nums.length ? nums[nums.length - 1] : null
+  }
+  const volumes = series.map(s => (s.posts || 0) + (s.comments || 0))
+  const sentiments = series.map(s => s.sentiment_avg)
+  const intents = series.map(s => s.purchase_intent_avg)
+  return [
+    { key: 'volume', label: t('step3.metricVolume'), points: buildPoints(volumes), latest: last(volumes) },
+    { key: 'sentiment', label: t('step3.metricSentiment'), points: buildPoints(sentiments), latest: fmt(last(sentiments)) },
+    { key: 'intent', label: t('step3.metricIntent'), points: buildPoints(intents), latest: fmt(last(intents)) }
+  ]
+})
+
+// 关键词命中统计（价格/购买/质量/竞品）
+const KEYWORD_LABELS = { price: 'step3.kwPrice', purchase: 'step3.kwPurchase', quality: 'step3.kwQuality', competitor: 'step3.kwCompetitor' }
+const keywordChips = computed(() => {
+  const hits = (marketMetrics.value && marketMetrics.value.totals && marketMetrics.value.totals.keyword_hits) || {}
+  return Object.entries(hits)
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([key, count]) => ({
+      key,
+      label: KEYWORD_LABELS[key] ? t(KEYWORD_LABELS[key]) : key,
+      count
+    }))
+})
+
+const fetchMarketMetrics = async (classify = false, classifyLimit = 60) => {
+  if (!props.simulationId) return
+  try {
+    const res = await getMarketMetrics(props.simulationId, { classify, limit: classifyLimit })
+    if (res.success && res.data) {
+      marketMetrics.value = res.data
+    }
+  } catch (err) {
+    console.warn('获取市场指标失败:', err)
+  }
+}
+
+// 问卷探针：抽样采访消费者 Agent
+const handleSurveyProbe = async () => {
+  if (!props.simulationId || isProbing.value) return
+  isProbing.value = true
+  try {
+    const res = await runSurveyProbe(props.simulationId, {
+      sample_size: 12,
+      current_round: runStatus.value.twitter_current_round || runStatus.value.reddit_current_round || 0
+    })
+    if (res.success && res.data) {
+      surveyResponses.value = (res.data.responses || []).slice(0, 6)
+      addLog(t('log.surveyProbeDone', { count: res.data.sample_size || 0 }))
+      // 顺带刷新指标（含一次小规模分类，让情绪/购买意愿曲线出现数据）
+      await fetchMarketMetrics(true, 30)
+    } else {
+      addLog(t('log.surveyProbeFailed', { error: res.error || t('common.unknownError') }))
+    }
+  } catch (err) {
+    addLog(t('log.surveyProbeFailed', { error: err.message }))
+  } finally {
+    isProbing.value = false
+  }
+}
 
 // Computed
 // 按时间顺序显示动作（最新的在最后面，即底部）
@@ -521,12 +658,17 @@ const fetchRunStatus = async () => {
         addLog(t('log.simFailed') + (data.error ? `: ${data.error}` : ''))
         phase.value = 2
         stopPolling()
+        fetchMarketMetrics(true)
         emit('update-status', 'error')
       } else if (isCompleted) {
         addLog(t('log.simCompleted'))
         phase.value = 2
         stopPolling()
+        fetchMarketMetrics(true)
         emit('update-status', 'completed')
+      } else {
+        // 运行中增量刷新（规则指标，零 LLM 成本）
+        fetchMarketMetrics(false)
       }
     }
   } catch (err) {
@@ -691,6 +833,7 @@ watch(() => props.systemLogs?.length, () => {
 onMounted(() => {
   addLog(t('log.step3Init'))
   if (props.simulationId) {
+    fetchMarketMetrics(false)
     doStartSimulation()
   }
 })
@@ -708,6 +851,134 @@ onUnmounted(() => {
   background: #FFFFFF;
   font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
   overflow: hidden;
+}
+
+/* --- 市场指标面板 --- */
+.metrics-panel {
+  border-bottom: 1px solid #EAEAEA;
+  background: #FAFAFA;
+  padding: 10px 24px;
+  flex-shrink: 0;
+}
+
+.metrics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.metrics-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #111;
+}
+
+.metrics-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.probe-btn {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+}
+
+.metrics-toggle {
+  border: 1px solid #E5E5E5;
+  background: #fff;
+  border-radius: 6px;
+  width: 26px;
+  height: 24px;
+  cursor: pointer;
+  color: #666;
+}
+
+.metrics-body {
+  margin-top: 10px;
+}
+
+.metrics-charts {
+  display: flex;
+  gap: 16px;
+}
+
+.metric-chart {
+  flex: 1;
+  min-width: 0;
+}
+
+.metric-chart-label {
+  font-size: 0.72rem;
+  color: #666;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.metric-latest {
+  font-family: 'JetBrains Mono', monospace;
+  color: #FF4500;
+  font-weight: 600;
+}
+
+.metric-sparkline {
+  width: 100%;
+  height: 36px;
+  background: #fff;
+  border: 1px solid #EAEAEA;
+  border-radius: 6px;
+}
+
+.metric-line {
+  fill: none;
+  stroke: #FF4500;
+  stroke-width: 1.6;
+}
+
+.metrics-keywords {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kw-chip {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #E5E5E5;
+  color: #444;
+}
+
+.survey-result {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #E5E5E5;
+}
+
+.survey-result-title {
+  font-size: 0.72rem;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.survey-answer {
+  font-size: 0.72rem;
+  color: #333;
+  line-height: 1.5;
+  margin-bottom: 3px;
+}
+
+.survey-agent {
+  font-family: 'JetBrains Mono', monospace;
+  color: #FF4500;
+  margin-right: 6px;
+}
+
+.survey-text {
+  opacity: 0.9;
 }
 
 /* --- Control Bar --- */

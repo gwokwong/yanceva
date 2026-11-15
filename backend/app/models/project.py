@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from ..config import Config
+from ..scenarios import DEFAULT_SCENARIO
 
 
 class ProjectStatus(str, Enum):
@@ -48,12 +49,14 @@ class Project:
     
     # 配置
     simulation_requirement: Optional[str] = None
+    # 场景标识（public_opinion / ecommerce），决定全链路 prompt 与实体角色规则
+    scenario: str = DEFAULT_SCENARIO
     chunk_size: int = 500
     chunk_overlap: int = 50
-    
+
     # 错误信息
     error: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
@@ -71,18 +74,19 @@ class Project:
             "zep_batch_id": self.zep_batch_id,
             "zep_batch_operation_id": self.zep_batch_operation_id,
             "simulation_requirement": self.simulation_requirement,
+            "scenario": self.scenario,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "error": self.error
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Project':
         """从字典创建"""
         status = data.get('status', 'created')
         if isinstance(status, str):
             status = ProjectStatus(status)
-        
+
         return cls(
             project_id=data['project_id'],
             name=data.get('name', 'Unnamed Project'),
@@ -98,6 +102,7 @@ class Project:
             zep_batch_id=data.get('zep_batch_id'),
             zep_batch_operation_id=data.get('zep_batch_operation_id'),
             simulation_requirement=data.get('simulation_requirement'),
+            scenario=data.get('scenario', DEFAULT_SCENARIO),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
             error=data.get('error')

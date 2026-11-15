@@ -19,13 +19,16 @@ from datetime import datetime
 from enum import Enum
 
 from ..config import Config
+from ..scenarios import Scenario, get_scenario
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
+from .market_metrics_service import MarketMetricsService
+from .simulation_manager import SimulationManager
 from .zep_tools import (
-    ZepToolsService, 
-    SearchResult, 
-    InsightForgeResult, 
+    ZepToolsService,
+    SearchResult,
+    InsightForgeResult,
     PanoramaResult,
     InterviewResult
 )
@@ -547,6 +550,21 @@ TOOL_DESC_INTERVIEW_AGENTS = """\
 
 【重要】需要OASIS模拟环境正在运行才能使用此功能！"""
 
+TOOL_DESC_MARKET_METRICS = """\
+【市场指标 - 量化数据摘要】
+读取本次模拟的市场指标（市场信号层自动从模拟行为中提取），无需环境运行。
+
+【返回内容】
+- 按模拟轮次的时间序列：发帖量、评论量、活跃Agent数
+- 情绪均值（-1负面到1正面）与购买意愿均值（0到1），来自对讨论内容的分类统计
+- 关键词命中统计：价格类、购买类、质量类、竞品类话题的热度
+- 问卷探针结果（如有）：消费者Agent的购买意愿打分、心理价位与主要顾虑
+
+【使用场景】
+- 需要"声量/情绪走势"的量化结论
+- 需要支撑"购买意愿、价格接受度"的数据引用
+- 需要引用消费者的问卷回答作为证据"""
+
 # ── 大纲规划 prompt ──
 
 PLAN_SYSTEM_PROMPT = """\
@@ -888,38 +906,52 @@ class ReportAgent:
     MAX_TOOL_CALLS_PER_CHAT = 2
     
     def __init__(
-        self, 
+        self,
         graph_id: str,
         simulation_id: str,
         simulation_requirement: str,
         llm_client: Optional[LLMClient] = None,
-        zep_tools: Optional[ZepToolsService] = None
+        zep_tools: Optional[ZepToolsService] = None,
+        scenario: Optional[Scenario] = None,
+        extra_supplement: str = ""
     ):
         """
         初始化Report Agent
-        
+
         Args:
             graph_id: 图谱ID
             simulation_id: 模拟ID
             simulation_requirement: 模拟需求描述
             llm_client: LLM客户端（可选）
             zep_tools: Zep工具服务（可选）
+            scenario: 场景包（可选，默认从模拟状态读取）
+            extra_supplement: SKU 级报告补充（商业交付的章节约束，可选）
         """
         self.graph_id = graph_id
         self.simulation_id = simulation_id
         self.simulation_requirement = simulation_requirement
-        
+        self.extra_supplement = extra_supplement
+
+        # 场景解析：显式传入 > 模拟状态记录 > 默认舆情场景
+        if scenario is None:
+            try:
+                state = SimulationManager().get_simulation(simulation_id)
+                scenario = get_scenario(getattr(state, 'scenario', None))
+            except Exception:
+                scenario = get_scenario(None)
+        self.scenario = scenario
+
         self.llm = llm_client or LLMClient()
         self.zep_tools = zep_tools or ZepToolsService()
-        
+
         # 工具定义
         self.tools = self._define_tools()
-        
+
         # 日志记录器（在 generate_report 中初始化）
         self.report_logger: Optional[ReportLogger] = None
         # 控制台日志记录器（在 generate_report 中初始化）
         self.console_logger: Optional[ReportConsoleLogger] = None
-        
+
         logger.info(t('report.agentInitDone', graphId=graph_id, simulationId=simulation_id))
     
     def _define_tools(self) -> Dict[str, Dict[str, Any]]:
@@ -956,6 +988,11 @@ class ReportAgent:
                     "interview_topic": "采访主题或需求描述（如：'了解学生对宿舍甲醛事件的看法'）",
                     "max_agents": "最多采访的Agent数量（可选，默认5，最大10）"
                 }
+            },
+            "market_metrics": {
+                "name": "market_metrics",
+                "description": TOOL_DESC_MARKET_METRICS,
+                "parameters": {}
             }
         }
     
@@ -1025,6 +1062,16 @@ class ReportAgent:
                     max_agents=max_agents
                 )
                 return result.to_text()
+
+            elif tool_name == "market_metrics":
+                # 市场指标摘要（声量/情绪/购买意愿/关键词命中/问卷探针）
+                service = MarketMetricsService()
+                try:
+                    # 先增量计算一次规则指标（零 LLM 成本），保证报告能拿到最新数据
+                    service.compute_metrics(self.simulation_id)
+                except Exception as error:
+                    logger.warning(f"市场指标计算失败（使用已有缓存）: {error}")
+                return service.get_report_summary(self.simulation_id)
             
             # ========== 向后兼容的旧工具（内部重定向到新工具） ==========
             
@@ -1068,7 +1115,7 @@ class ReportAgent:
             return f"工具执行失败: {str(e)}"
     
     # 合法的工具名称集合，用于裸 JSON 兜底解析时校验
-    VALID_TOOL_NAMES = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
+    VALID_TOOL_NAMES = {"insight_forge", "panorama_search", "quick_search", "interview_agents", "market_metrics"}
 
     def _parse_tool_calls(self, response: str) -> List[Dict[str, Any]]:
         """
@@ -1202,7 +1249,12 @@ class ReportAgent:
         if progress_callback:
             progress_callback("planning", 30, t('progress.generatingOutline'))
         
-        system_prompt = f"{PLAN_SYSTEM_PROMPT}\n\n{get_language_instruction()}"
+        system_prompt = f"{PLAN_SYSTEM_PROMPT}"
+        if self.scenario.report_plan_supplement:
+            system_prompt = f"{system_prompt}{self.scenario.report_plan_supplement}"
+        if self.extra_supplement:
+            system_prompt = f"{system_prompt}{self.extra_supplement}"
+        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
         user_prompt = PLAN_USER_PROMPT_TEMPLATE.format(
             simulation_requirement=self.simulation_requirement,
             total_nodes=context.get('graph_statistics', {}).get('total_nodes', 0),
@@ -1298,6 +1350,10 @@ class ReportAgent:
             section_title=section.title,
             tools_description=self._get_tools_description(),
         )
+        if self.scenario.report_section_supplement:
+            system_prompt = f"{system_prompt}{self.scenario.report_section_supplement}"
+        if self.extra_supplement:
+            system_prompt = f"{system_prompt}{self.extra_supplement}"
         system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
 
         # 构建用户prompt - 每个已完成章节各传入最大4000字
@@ -1327,7 +1383,7 @@ class ReportAgent:
         min_tool_calls = 3  # 最少工具调用次数
         conflict_retries = 0  # 工具调用与Final Answer同时出现的连续冲突次数
         used_tools = set()  # 记录已调用过的工具名
-        all_tools = {"insight_forge", "panorama_search", "quick_search", "interview_agents"}
+        all_tools = {"insight_forge", "panorama_search", "quick_search", "interview_agents", "market_metrics"}
 
         # 报告上下文，用于InsightForge的子问题生成
         report_context = f"章节标题: {section.title}\n模拟需求: {self.simulation_requirement}"

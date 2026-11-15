@@ -1,9 +1,11 @@
 <template>
   <router-view />
+  <CookieConsent />
 </template>
 
 <script setup>
 // 使用 Vue Router 来管理页面
+import CookieConsent from './components/CookieConsent.vue'
 </script>
 
 <style>

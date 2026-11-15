@@ -9,6 +9,47 @@ services:
     ports:
       - "3000:3000"
       - "5001:5001"
+    depends_on:
+      neo4j:
+        condition: service_healthy
     restart: unless-stopped
     volumes:
       - ./backend/uploads:/app/backend/uploads
+
+  # 图谱后端：Graphiti + Neo4j（取代原 Zep Cloud，完全开源自托管）
+  neo4j:
+    image: neo4j:5-community
+    container_name: mirofish-neo4j
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-mirofish-password}
+      # 内存配置适配单机预演工作负载（可按机器规格调整）
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=1G
+      - NEO4J_server_memory_pagecache_size=512m
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  # Embedding 服务：Ollama + Qwen3-Embedding（OpenAI 兼容 /v1/embeddings）
+  # 首次启动后需拉取模型：docker exec mirofish-ollama ollama pull qwen3-embedding:0.6b
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mirofish-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  ollama_models:

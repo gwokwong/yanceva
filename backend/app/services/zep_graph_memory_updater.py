@@ -1,6 +1,6 @@
 """
-Zep图谱记忆更新服务
-将模拟中的Agent活动动态更新到Zep图谱中
+图谱记忆更新服务
+将模拟中的Agent活动动态更新到图谱中（Graphiti + Neo4j 后端）
 """
 
 import time
@@ -13,13 +13,12 @@ from queue import Queue, Empty
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
-from ..utils.zep import (
-    ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
-    call_zep_read_with_retry,
-    get_zep_client,
-)
+from .graph_store import get_graph_store
 
 logger = get_logger('mirofish.zep_graph_memory_updater')
+
+# 模拟活动回写的整体排空时限（Graphiti 摄取是同步的，通常远快于此）
+INGESTION_WAIT_TIMEOUT_SECONDS = 600
 
 
 @dataclass
@@ -248,19 +247,16 @@ class ZepGraphMemoryUpdater:
     ):
         """
         初始化更新器
-        
+
         Args:
-            graph_id: Zep图谱ID
-            api_key: Zep API Key（可选，默认从配置读取）
+            graph_id: 图谱ID（Graphiti group_id）
+            api_key: 兼容旧参数签名，不再使用
         """
         self.graph_id = graph_id
         self.simulation_id = simulation_id or "unknown"
-        self.api_key = api_key or Config.ZEP_API_KEY
-        
-        if not self.api_key:
-            raise ValueError("ZEP_API_KEY未配置")
-        
-        self.client = get_zep_client(self.api_key)
+        self.api_key = api_key  # 兼容旧签名
+
+        self.store = get_graph_store()
         
         # 活动队列
         self._activity_queue: Queue = Queue()
@@ -311,8 +307,8 @@ class ZepGraphMemoryUpdater:
         logger.info(f"ZepGraphMemoryUpdater 已启动: graph_id={self.graph_id}")
     
     def stop(self):
-        """Drain the worker, flush tail events, and wait for Cloud ingestion."""
-        deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
+        """Drain the worker, flush tail events, and wait for graph ingestion."""
+        deadline = time.time() + INGESTION_WAIT_TIMEOUT_SECONDS
         # Serialize the accepting->closed transition with add_activity's
         # check+enqueue operation. This closes the small race where a producer
         # could enqueue after both the worker and final flush had exited.
@@ -491,37 +487,18 @@ class ZepGraphMemoryUpdater:
             if deadline is not None and time.time() >= deadline:
                 raise _DrainDeadlineExceeded(processed_count)
             try:
-                episode = self.client.graph.add(
-                    graph_id=self.graph_id,
-                    type="text",
-                    data=combined_text,
-                    created_at=self._to_rfc3339(payload_activities[-1].timestamp),
+                # Graphiti 的 add_episode 在返回时即完成抽取；reference_time
+                # 采用模拟世界内的事件时间，保持时间线语义正确。
+                episode_uuids = self.store.add_episodes(
+                    self.graph_id,
+                    [combined_text],
+                    reference_time=self._to_rfc3339(payload_activities[-1].timestamp),
                     source_description="MiroFish simulation activity batch",
-                    metadata={
-                        "source": "mirofish_simulation",
-                        "simulation_id": self.simulation_id,
-                        "platform": platform,
-                        "activity_count": len(payload_activities),
-                        "first_round": min(a.round_num for a in payload_activities),
-                        "last_round": max(a.round_num for a in payload_activities),
-                        "agent_ids": ",".join(
-                            str(value)
-                            for value in sorted({a.agent_id for a in payload_activities})
-                        ),
-                        "action_types": ",".join(
-                            value
-                            for value in sorted({a.action_type for a in payload_activities})
-                            if value
-                        ) or "unknown",
-                    },
                 )
 
-                episode_uuid = (
-                    getattr(episode, "uuid_", None)
-                    or getattr(episode, "uuid", None)
-                )
+                episode_uuid = episode_uuids[0] if episode_uuids else None
                 if not episode_uuid:
-                    raise RuntimeError("Zep graph.add returned no episode UUID")
+                    raise RuntimeError("graph episode ingestion returned no episode UUID")
                 self._pending_episode_uuids.append(str(episode_uuid))
                 self._total_sent += 1
                 self._total_items_sent += len(payload_activities)
@@ -530,10 +507,9 @@ class ZepGraphMemoryUpdater:
                 logger.debug(f"批量内容预览: {combined_text[:200]}...")
 
             except Exception as e:
-                # graph.add has no idempotency key. Replaying an ambiguous
-                # response can duplicate extracted facts, so fail closed and
-                # surface the incomplete batch to SimulationRunner.
-                logger.error(f"批量发送到Zep失败，未自动重放非幂等写入: {e}")
+                # add_episode 非幂等。重放模糊失败的响应可能重复抽取事实，
+                # 因此失败即终止并上报，由 SimulationRunner 走恢复流程。
+                logger.error(f"批量发送到图谱失败，未自动重放非幂等写入: {e}")
                 self._failed_count += 1
                 self._failed_batches.append({
                     "platform": platform,
@@ -597,27 +573,7 @@ class ZepGraphMemoryUpdater:
                     del self._platform_buffers[platform][:processed_count]
 
     def _wait_for_pending_episodes(self, *, deadline: float | None = None) -> None:
-        pending = set(self._pending_episode_uuids)
-        if not pending:
-            return
-
-        if deadline is None:
-            deadline = time.time() + ZEP_INGESTION_WAIT_TIMEOUT_SECONDS
-        while pending:
-            if time.time() >= deadline:
-                raise TimeoutError(
-                    f"Zep simulation ingestion timed out with {len(pending)} "
-                    "episode(s) pending"
-                )
-            for episode_uuid in list(pending):
-                episode = call_zep_read_with_retry(
-                    lambda: self.client.graph.episode.get(uuid_=episode_uuid),
-                    operation_name=f"poll simulation episode {episode_uuid}",
-                )
-                if getattr(episode, "processed", False):
-                    pending.remove(episode_uuid)
-            if pending:
-                time.sleep(3)
+        """Graphiti 的 add_episode 在返回时已完成处理，无需轮询。"""
         self._pending_episode_uuids = []
     
     def get_stats(self) -> Dict[str, Any]:

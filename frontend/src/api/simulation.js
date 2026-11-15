@@ -186,3 +186,21 @@ export const interviewAgents = (data) => {
 export const getSimulationHistory = (limit = 20) => {
   return service.get('/api/simulation/history', { params: { limit } })
 }
+
+/**
+ * 获取市场指标（电商新品上市预演：声量/情绪/购买意愿/关键词命中）
+ * @param {string} simulationId
+ * @param {Object} params - { classify: 是否做LLM分类, limit: 单次分类上限 }
+ */
+export const getMarketMetrics = (simulationId, params = {}) => {
+  return service.get(`/api/simulation/${simulationId}/market-metrics`, { params })
+}
+
+/**
+ * 问卷探针：抽样采访消费者 Agent
+ * @param {string} simulationId
+ * @param {Object} data - { sample_size, current_round }
+ */
+export const runSurveyProbe = (simulationId, data = {}) => {
+  return service.post(`/api/simulation/${simulationId}/survey-probe`, data)
+}

@@ -1,6 +1,6 @@
-from types import SimpleNamespace
 import threading
 from queue import Queue
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,23 +24,29 @@ def _activity(index=1, content="hello"):
     )
 
 
-def _client(add):
-    return SimpleNamespace(
-        graph=SimpleNamespace(
-            add=add,
-            episode=SimpleNamespace(
-                get=lambda **_kwargs: SimpleNamespace(processed=True)
-            ),
-        )
-    )
+class _FakeStore:
+    """记录 add_episodes 调用的假 GraphStore。"""
+
+    def __init__(self, add):
+        self._add = add
+        self.calls = []
+
+    def add_episodes(self, graph_id, texts, **kwargs):
+        call = {"graph_id": graph_id, "texts": list(texts), **kwargs}
+        self.calls.append(call)
+        self._add(**call)
+        return [f"episode-{i}" for i in range(len(texts))]
 
 
 def _updater(monkeypatch, add, simulation_id="sim-1"):
-    client = _client(add)
-    monkeypatch.setattr(updater_module, "get_zep_client", lambda _key: client)
+    # 阻断真实 GraphStore 的懒加载：构造后直接替换为假 store
+    monkeypatch.setattr(
+        updater_module,
+        "get_graph_store",
+        lambda: _FakeStore(add),
+    )
     updater = ZepGraphMemoryUpdater(
         "graph-1",
-        api_key="test-key",
         simulation_id=simulation_id,
     )
     updater.SEND_INTERVAL = 0
@@ -51,7 +57,7 @@ def test_stop_drains_an_immediately_queued_tail_activity(monkeypatch):
     writes = []
     updater = _updater(
         monkeypatch,
-        lambda **kwargs: writes.append(kwargs) or SimpleNamespace(uuid_="episode-1"),
+        lambda **kwargs: writes.append(kwargs),
     )
 
     updater.start()
@@ -72,7 +78,6 @@ def test_network_write_happens_outside_the_buffer_lock(monkeypatch):
         lock_was_available.append(acquired)
         if acquired:
             updater._buffer_lock.release()
-        return SimpleNamespace(uuid_="episode-1")
 
     updater = _updater(monkeypatch, add)
     updater.start()
@@ -87,7 +92,7 @@ def test_activity_episode_has_provenance_time_and_a_safe_size(monkeypatch):
     writes = []
     updater = _updater(
         monkeypatch,
-        lambda **kwargs: writes.append(kwargs) or SimpleNamespace(uuid_="episode-1"),
+        lambda **kwargs: writes.append(kwargs),
         simulation_id="sim-provenance",
     )
 
@@ -98,12 +103,9 @@ def test_activity_episode_has_provenance_time_and_a_safe_size(monkeypatch):
 
     assert len(writes) == 1
     write = writes[0]
-    assert len(write["data"]) <= updater.MAX_EPISODE_CHARS
-    assert write["created_at"] == "2026-07-22T12:00:00+08:00"
+    assert len(write["texts"][0]) <= updater.MAX_EPISODE_CHARS
+    assert write["reference_time"] == "2026-07-22T12:00:00+08:00"
     assert write["source_description"] == "MiroFish simulation activity batch"
-    assert write["metadata"]["simulation_id"] == "sim-provenance"
-    assert write["metadata"]["platform"] == "twitter"
-    assert write["metadata"]["activity_count"] == 1
 
 
 def test_failed_non_idempotent_write_is_reported_by_stop(monkeypatch):
@@ -123,7 +125,7 @@ def test_failed_non_idempotent_write_is_reported_by_stop(monkeypatch):
 def test_failed_simulation_action_is_not_ingested(monkeypatch):
     updater = _updater(
         monkeypatch,
-        lambda **_kwargs: SimpleNamespace(uuid_="unused"),
+        lambda **_kwargs: None,
     )
 
     updater.add_activity_from_dict(
@@ -145,7 +147,7 @@ def test_stop_cannot_finish_between_acceptance_check_and_enqueue(monkeypatch):
     writes = []
     updater = _updater(
         monkeypatch,
-        lambda **kwargs: writes.append(kwargs) or SimpleNamespace(uuid_="episode-1"),
+        lambda **kwargs: writes.append(kwargs),
     )
 
     put_entered = threading.Event()
@@ -177,30 +179,14 @@ def test_stop_cannot_finish_between_acceptance_check_and_enqueue(monkeypatch):
     assert len(writes) == 1
 
 
-def test_pending_episode_wait_has_a_deadline(monkeypatch):
-    updater = _updater(
-        monkeypatch,
-        lambda **_kwargs: SimpleNamespace(uuid_="episode-1"),
-    )
-    updater._pending_episode_uuids = ["episode-1"]
-    updater.client.graph.episode.get = lambda **_kwargs: SimpleNamespace(
-        processed=False
-    )
-    timestamps = iter([0.0, 2.0])
-    monkeypatch.setattr(updater_module, "ZEP_INGESTION_WAIT_TIMEOUT_SECONDS", 1)
-    monkeypatch.setattr(updater_module.time, "time", lambda: next(timestamps))
-    monkeypatch.setattr(updater_module.time, "sleep", lambda _seconds: None)
-
-    with pytest.raises(TimeoutError, match="pending"):
-        updater._wait_for_pending_episodes()
-
-
 def test_explicit_graph_destruction_can_discard_a_stopped_failed_updater():
     updater = SimpleNamespace(
         graph_id="graph-1",
         _running=False,
-        _worker_thread=SimpleNamespace(is_alive=lambda: False),
+        _worker_thread=None,
+        stop=lambda *a, **k: None,
     )
+    updater._worker_thread = SimpleNamespace(is_alive=lambda: False)
     ZepGraphMemoryManager._updaters["sim-failed"] = updater
     try:
         assert ZepGraphMemoryManager.discard_inactive_updater("sim-failed") is True
@@ -216,7 +202,6 @@ def test_flush_deadline_keeps_unattempted_platform_for_a_safe_retry(monkeypatch)
     def add(**kwargs):
         writes.append(kwargs)
         now[0] = 2.0
-        return SimpleNamespace(uuid_=f"episode-{len(writes)}")
 
     updater = _updater(monkeypatch, add)
     updater._platform_buffers["twitter"] = [_activity(1)]

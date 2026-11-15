@@ -21,12 +21,14 @@ from queue import Queue
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_locale, set_locale
-from ..utils.zep import (
-    ZEP_HTTP_REQUEST_TIMEOUT_SECONDS,
-    ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
+from .zep_graph_memory_updater import (
+    INGESTION_WAIT_TIMEOUT_SECONDS as ZEP_INGESTION_WAIT_TIMEOUT_SECONDS,
+    ZepGraphMemoryManager,
 )
-from .zep_graph_memory_updater import ZepGraphMemoryManager
 from .simulation_ipc import SimulationIPCClient, CommandType, IPCResponse
+
+# 原单次 Cloud HTTP 超时；Graphiti 调用已有各自超时，这里仅作为排空宽限量。
+ZEP_HTTP_REQUEST_TIMEOUT_SECONDS = 60
 
 logger = get_logger('mirofish.simulation_runner')
 

@@ -1,14 +1,18 @@
+import pytest
+from pydantic import ValidationError
+
+from app.scenarios import get_scenario
+from app.services.graph_store.graphiti_store import (
+    build_edge_type_models,
+    build_entity_type_models,
+)
 from app.services.ontology_generator import OntologyGenerator
-from app.services.graph_builder import GraphBuilderService
 from app.utils.ontology import (
     MAX_ONTOLOGY_ATTRIBUTES,
     MAX_ONTOLOGY_SOURCE_TARGETS,
+    MAX_ONTOLOGY_TYPES,
     normalize_ontology_attribute,
     normalize_ontology_attributes,
-)
-from zep_cloud.external_clients.ontology import (
-    edge_model_to_api_schema,
-    entity_model_to_api_schema,
 )
 
 
@@ -31,7 +35,7 @@ def test_reject_unusable_attribute_shapes():
         assert normalize_ontology_attribute(value) is None
 
 
-def test_attribute_list_is_non_empty_and_capped_for_zep():
+def test_attribute_list_is_non_empty_and_capped():
     assert normalize_ontology_attributes(None) == [{
         "name": "details",
         "type": "text",
@@ -75,183 +79,91 @@ def test_generator_adds_a_property_to_empty_custom_types():
     assert result["edge_types"][0]["attributes"][0]["name"] == "details"
 
 
-def test_graph_builder_safety_net_accepts_strings_and_skips_invalid_values():
-    captured = {}
+# ============== Graphiti 自定义类型模型构建 ==============
 
-    class GraphApi:
-        def set_ontology(self, **kwargs):
-            captured.update(kwargs)
-
-    class Client:
-        graph = GraphApi()
-
-    builder = object.__new__(GraphBuilderService)
-    builder.client = Client()
-    builder.set_ontology("graph-id", {
-        "entity_types": [{
-            "name": "Speaker",
-            "attributes": ["role", None, {"name": "summary"}],
-        }],
+def test_build_entity_type_models_creates_pydantic_models_with_safe_names():
+    ontology = {
+        "entity_types": [
+            {
+                "name": "Speaker",
+                "description": "A speaking entity",
+                "attributes": ["role", "graph_id"],
+            },
+        ],
         "edge_types": [],
-    })
-
-    speaker = captured["entities"]["Speaker"]
-    assert set(speaker.__annotations__) == {"role", "entity_summary"}
-
-
-def test_graph_builder_emits_a_pinned_zep_sdk_compatible_schema():
-    captured = {}
-
-    class GraphApi:
-        def set_ontology(self, **kwargs):
-            captured.update(kwargs)
-
-    class Client:
-        graph = GraphApi()
-
-    builder = object.__new__(GraphBuilderService)
-    builder.client = Client()
-    builder.set_ontology("graph-id", {
-        "entity_types": [{
-            "name": "Speaker",
-            "attributes": ["graph_id"] + [
-                f"field_{index}" for index in range(10)
-            ],
-        }],
-        "edge_types": [{
-            "name": "MENTIONS",
-            "attributes": [],
-            "source_targets": [{"source": "Speaker", "target": "Speaker"}],
-        }],
-    })
-
-    assert captured["graph_ids"] == ["graph-id"]
-
-    speaker = captured["entities"]["Speaker"]
-    entity_schema = entity_model_to_api_schema(speaker, "Speaker")
-    assert len(entity_schema["properties"]) == MAX_ONTOLOGY_ATTRIBUTES
-    assert entity_schema["properties"][0] == {
-        "name": "entity_graph_id",
-        "type": "Text",
-        "description": "graph_id",
     }
 
-    mentions, source_targets = captured["edges"]["MENTIONS"]
-    edge_schema = edge_model_to_api_schema(mentions, "MENTIONS")
-    assert edge_schema["properties"] == [{
-        "name": "details",
-        "type": "Text",
-        "description": "Additional details about this ontology type.",
-    }]
-    assert source_targets[0].source == "Speaker"
-    assert source_targets[0].target == "Speaker"
+    models = build_entity_type_models(ontology)
+
+    assert set(models) == {"Speaker"}
+    speaker = models["Speaker"]
+    assert set(speaker.__annotations__) == {"role", "entity_graph_id"}
+
+    instance = speaker(role="host", entity_graph_id="g-1")
+    assert instance.role == "host"
+    assert instance.entity_graph_id == "g-1"
+
+    with pytest.raises(ValidationError):
+        speaker(role=123, entity_graph_id=None)  # 非 str 属性应被拒绝
 
 
-def test_graph_builder_passes_an_empty_entity_mapping_for_edge_only_ontology():
-    captured = {}
-
-    class GraphApi:
-        def set_ontology(self, **kwargs):
-            captured.update(kwargs)
-
-    class Client:
-        graph = GraphApi()
-
-    builder = object.__new__(GraphBuilderService)
-    builder.client = Client()
-    builder.set_ontology("graph-id", {
-        "entity_types": [],
-        "edge_types": [{
-            "name": "RELATED_TO",
-            "attributes": ["reason"],
-            "source_targets": [{"source": "Entity", "target": "Entity"}],
-        }],
-    })
-
-    assert captured["entities"] == {}
-
-
-def test_graph_builder_deduplicates_and_caps_edge_source_targets_for_zep():
-    captured = {}
-
-    class GraphApi:
-        def set_ontology(self, **kwargs):
-            captured.update(kwargs)
-
-    class Client:
-        graph = GraphApi()
-
-    source_targets = [
-        {"source": f"Source{index}", "target": f"Target{index}"}
-        for index in range(MAX_ONTOLOGY_SOURCE_TARGETS + 2)
-    ]
-    source_targets.insert(1, dict(source_targets[0]))
-
-    builder = object.__new__(GraphBuilderService)
-    builder.client = Client()
-    builder.set_ontology("graph-id", {
-        "entity_types": [],
-        "edge_types": [{
-            "name": "RELATED_TO",
-            "attributes": ["reason"],
-            "source_targets": source_targets,
-        }],
-    })
-
-    _, normalized_targets = captured["edges"]["RELATED_TO"]
-    assert len(normalized_targets) == MAX_ONTOLOGY_SOURCE_TARGETS
-    assert [(item.source, item.target) for item in normalized_targets] == [
-        (f"Source{index}", f"Target{index}")
-        for index in range(MAX_ONTOLOGY_SOURCE_TARGETS)
-    ]
-
-
-def test_generator_ignores_invalid_entries_and_normalizes_edge_names():
-    source_targets = [
-        {"source": "speaker", "target": "news outlet"},
-        {"source": "speaker", "target": "news outlet"},
-        None,
-    ] + [
-        {"source": "speaker", "target": "news outlet" if index == 0 else "Person"}
-        for index in range(12)
-    ]
-
-    result = OntologyGenerator(llm_client=object())._validate_and_process({
-        "entity_types": ["speaker", None, 7, {"name": "news outlet"}],
-        "edge_types": [
-            "unusable edge",
-            None,
-            {"name": "worksFor", "source_targets": source_targets},
-            {"name": "works-for", "source_targets": []},
+def test_build_entity_type_models_caps_at_max_types():
+    ontology = {
+        "entity_types": [
+            {"name": f"Type{index}", "attributes": []}
+            for index in range(MAX_ONTOLOGY_TYPES + 5)
         ],
-    })
+        "edge_types": [],
+    }
 
-    assert [entity["name"] for entity in result["entity_types"][:2]] == [
-        "Speaker",
-        "NewsOutlet",
-    ]
-    assert [edge["name"] for edge in result["edge_types"]] == ["WORKS_FOR"]
-    assert result["edge_types"][0]["source_targets"] == [
-        {"source": "Speaker", "target": "NewsOutlet"},
-        {"source": "Speaker", "target": "Person"},
-    ]
+    models = build_entity_type_models(ontology)
+    assert len(models) == MAX_ONTOLOGY_TYPES
 
 
-def test_generator_caps_after_discarding_invalid_edge_endpoints():
-    invalid_first = [
-        {"source": f"Removed{index}", "target": "AlsoRemoved"}
-        for index in range(MAX_ONTOLOGY_SOURCE_TARGETS)
-    ]
-    result = OntologyGenerator(llm_client=object())._validate_and_process({
-        "entity_types": [{"name": "person"}, {"name": "organization"}],
-        "edge_types": [{
-            "name": "works_for",
-            "source_targets": invalid_first + [
-                {"source": "person", "target": "organization"}
-            ],
-        }],
-    })
+def test_build_edge_type_models_uses_pascal_case_class_names():
+    ontology = {
+        "entity_types": [],
+        "edge_types": [
+            {"name": "WORKS_FOR", "description": "employment", "attributes": []},
+        ],
+    }
 
-    assert result["edge_types"][0]["source_targets"] == [
-        {"source": "Person", "target": "Organization"}
-    ]
+    models = build_edge_type_models(ontology)
+    assert set(models) == {"WORKS_FOR"}
+    assert models["WORKS_FOR"].__name__ == "WorksFor"
+
+
+def test_builder_set_ontology_delegates_to_store():
+    """GraphBuilderService.set_ontology 只做委托，本体在摄取时转换为模型。"""
+
+    class FakeStore:
+        def __init__(self):
+            self.calls = []
+
+        def set_ontology(self, graph_id, ontology):
+            self.calls.append((graph_id, ontology))
+
+    from app.services.graph_builder import GraphBuilderService
+
+    builder = object.__new__(GraphBuilderService)
+    builder.store = FakeStore()
+
+    ontology = {"entity_types": [{"name": "Speaker", "attributes": ["role", None]}]}
+    builder.set_ontology("graph-id", ontology)
+
+    assert builder.store.calls == [("graph-id", ontology)]
+
+
+def test_scenarios_provide_distinct_ontology_prompts():
+    opinion = get_scenario("public_opinion")
+    ecommerce = get_scenario("ecommerce")
+
+    assert opinion.ontology_system_prompt != ecommerce.ontology_system_prompt
+    assert "社交媒体舆论模拟" in opinion.ontology_system_prompt
+    assert "电商新品上市预演" in ecommerce.ontology_system_prompt
+    # 电商场景的知识节点不生成 Agent
+    assert "product" in ecommerce.knowledge_node_types
+    assert not opinion.is_knowledge_node("Product")
+    assert ecommerce.is_knowledge_node("Product")
+    assert ecommerce.is_agent_entity("Consumer")
+    assert not ecommerce.is_agent_entity("Product")

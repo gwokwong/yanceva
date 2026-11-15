@@ -1,15 +1,68 @@
 <!doctype html>
-<html lang="zh">
+<html lang="en">
   <head>
-    <script>document.documentElement.lang = localStorage.getItem('locale') || 'zh'</script>
+    <script>document.documentElement.lang = localStorage.getItem('locale') || 'en'</script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@100..800&family=Noto+Sans+SC:wght@300;400;500;700;800;900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="MiroFish - 社交媒体舆论模拟系统" />
-    <title>MiroFish - 预测万物</title>
+
+    <!-- SEO -->
+    <title>Yanceva | AI Business Rehearsal Platform — Simulate Decisions Before You Commit</title>
+    <meta name="description" content="Rehearse your business decisions on a sandbox of AI agents. Product launches, SaaS pricing, brand crises, competitor moves, creator content, listing reviews — get actionable reports in hours. From $19." />
+    <meta name="keywords" content="product launch simulation, AI market research, pre-launch testing, buyer reaction sandbox, competitor response simulation, ecommerce launch rehearsal" />
+    <link rel="canonical" href="https://yanceva.com/" />
+    <meta name="robots" content="index, follow" />
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="MiroFish Rehearsal Platform" />
+    <meta property="og:title" content="Rehearse Business Decisions in a Sandbox of AI Agents" />
+    <meta property="og:description" content="Market simulations for product launches, SaaS pricing, brand crises, listing reviews and more — delivered as actionable reports in hours." />
+    <meta property="og:url" content="https://yanceva.com/" />
+    <meta property="og:image" content="https://yanceva.com/og-cover.png" />
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Rehearse Business Decisions in a Sandbox of AI Agents" />
+    <meta name="twitter:description" content="Market simulations for 6 business scenarios — delivered as actionable reports in hours." />
+    <!-- hreflang（中英，预留扩展） -->
+    <link rel="alternate" hreflang="en" href="https://yanceva.com/" />
+    <link rel="alternate" hreflang="zh" href="https://yanceva.com/?lang=zh" />
+    <link rel="alternate" hreflang="x-default" href="https://yanceva.com/" />
+    <!-- 结构化数据：Organization + Service + FAQ 占位 -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {"@type": "Organization", "name": "MiroFish Rehearsal Platform",
+         "url": "https://yanceva.com/", "description": "AI multi-agent market rehearsal platform"},
+        {"@type": "Service", "name": "AI Business Rehearsal Platform",
+         "description": "Multi-agent sandbox simulations for product launches, SaaS pricing, brand crises, listing reviews, competitor response and creator content — actionable reports in hours.",
+         "provider": {"@type": "Organization", "name": "MiroFish"},
+         "areaServed": "Worldwide",
+         "offers": {"@type": "Offer", "price": "49", "priceCurrency": "USD"}}
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {"@type": "Question", "name": "How reliable are the rehearsal results?",
+         "acceptedAnswer": {"@type": "Answer", "text": "Every conclusion comes from conversations that actually happened inside the simulation, with verbatim agent quotes and quantified metrics. The sandbox is a prediction to help you find problems and compare options — combine it with other sources for major decisions."}},
+        {"@type": "Question", "name": "What do I get and when?",
+         "acceptedAnswer": {"@type": "Answer", "text": "A report with volume/sentiment/purchase-intent charts, verbatim agent quotes and action items. Standard ~2 hours; Professional with A/B variants ~4 hours."}},
+        {"@type": "Question", "name": "Is my product data safe?",
+         "acceptedAnswer": {"@type": "Answer", "text": "Your materials are used only to run your rehearsal. The LLM provider's policy states customer data is not used for training, and agents are fictional. You can request deletion at any time."}},
+        {"@type": "Question", "name": "How much does it cost?",
+         "acceptedAnswer": {"@type": "Answer", "text": "Sandbox rehearsals from $49, listing risk review from $19, professional tier with A/B variants $99. Payment via international cards through Creem."}}
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="app"></div>

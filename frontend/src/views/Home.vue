@@ -2,7 +2,7 @@
   <div class="home-container">
     <!-- 顶部导航栏 -->
     <nav class="navbar">
-      <div class="nav-brand">MIROFISH</div>
+      <div class="nav-brand" @click="$router.push('/')" style="cursor:pointer"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:7px;flex-shrink:0"><rect width="32" height="32" rx="7" fill="#FF4500"/><line x1="8" y1="9" x2="14" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="18" y1="9" x2="24" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="8" y1="16" x2="24" y2="16" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.75"/><line x1="8" y1="23" x2="13" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="19" y1="23" x2="24" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>YANCEVA</div>
       <div class="nav-links">
         <LanguageSwitcher />
         <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
@@ -172,16 +172,44 @@
               <span>{{ $t('home.inputParams') }}</span>
             </div>
 
+            <!-- 场景选择 -->
+            <div class="console-section">
+              <div class="console-header">
+                <span class="console-label">{{ $t('home.scenarioTitle') }}</span>
+              </div>
+              <div class="scenario-cards">
+                <button
+                  v-for="sc in scenarios"
+                  :key="sc.value"
+                  class="scenario-card"
+                  :class="{ active: formData.scenario === sc.value }"
+                  type="button"
+                  @click="selectScenario(sc.value)"
+                  :disabled="loading"
+                >
+                  <div class="scenario-card-title">{{ sc.title }}</div>
+                  <div class="scenario-card-desc">{{ sc.desc }}</div>
+                </button>
+              </div>
+            </div>
+
             <!-- 输入区域 -->
             <div class="console-section">
               <div class="console-header">
                 <span class="console-label">{{ $t('home.simulationPrompt') }}</span>
+                <button
+                  v-if="formData.scenario === 'ecommerce' && !formData.simulationRequirement"
+                  class="template-btn"
+                  type="button"
+                  @click="fillEcommerceTemplate"
+                  :disabled="loading"
+                >{{ $t('home.fillEcommerceTemplate') }}</button>
               </div>
               <div class="input-wrapper">
                 <textarea
                   v-model="formData.simulationRequirement"
                   class="code-input"
-                  :placeholder="$t('home.promptPlaceholder')"
+                  :placeholder="formData.scenario === 'ecommerce' ? $t('home.promptPlaceholderEcommerce') : $t('home.promptPlaceholder')"
                   rows="6"
                   :disabled="loading"
                 ></textarea>
@@ -214,15 +242,44 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import HistoryDatabase from '../components/HistoryDatabase.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+
+const { t } = useI18n()
 
 const router = useRouter()
 
 // 表单数据
 const formData = ref({
-  simulationRequirement: ''
+  simulationRequirement: '',
+  scenario: 'public_opinion'
 })
+
+// 场景选项（文案走 i18n）
+const scenarios = computed(() => [
+  {
+    value: 'public_opinion',
+    title: t('home.scenarioLabelPublicOpinion'),
+    desc: t('home.scenarioDescPublicOpinion')
+  },
+  {
+    value: 'ecommerce',
+    title: t('home.scenarioLabelEcommerce'),
+    desc: t('home.scenarioDescEcommerce')
+  }
+])
+
+const selectScenario = (value) => {
+  if (!loading.value) {
+    formData.value.scenario = value
+  }
+}
+
+// 填充电商新品上市预演需求模板
+const fillEcommerceTemplate = () => {
+  formData.value.simulationRequirement = t('home.ecommerceTemplate')
+}
 
 // 文件列表
 const files = ref([])
@@ -297,11 +354,15 @@ const scrollToBottom = () => {
 // 开始模拟 - 立即跳转，API调用在Process页面进行
 const startSimulation = () => {
   if (!canSubmit.value || loading.value) return
-  
+
   // 存储待上传的数据
   import('../store/pendingUpload.js').then(({ setPendingUpload }) => {
-    setPendingUpload(files.value, formData.value.simulationRequirement)
-    
+    setPendingUpload(
+      files.value,
+      formData.value.simulationRequirement,
+      formData.value.scenario
+    )
+
     // 立即跳转到Process页面（使用特殊标识表示新建项目）
     router.push({
       name: 'Process',
@@ -894,6 +955,73 @@ const startSimulation = () => {
     margin-bottom: 20px;
   }
 }
+
+/* 场景选择卡片 */
+.scenario-cards {
+  display: flex;
+  gap: 10px;
+}
+
+.scenario-card {
+  flex: 1;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #E5E5E5);
+  border-radius: 8px;
+  background: var(--white, #fff);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.scenario-card:hover {
+  border-color: var(--orange, #FF4500);
+}
+
+.scenario-card.active {
+  border-color: var(--orange, #FF4500);
+  box-shadow: 0 0 0 1px var(--orange, #FF4500) inset;
+}
+
+.scenario-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.scenario-card-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+  color: var(--black, #000);
+}
+
+.scenario-card.active .scenario-card-title {
+  color: var(--orange, #FF4500);
+}
+
+.scenario-card-desc {
+  font-size: 0.75rem;
+  color: var(--gray-text, #666);
+  line-height: 1.4;
+}
+
+.template-btn {
+  border: 1px solid var(--orange, #FF4500);
+  color: var(--orange, #FF4500);
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.template-btn:hover {
+  background: rgba(255, 69, 0, 0.06);
+}
+.orders-entry-btn {
+  border: 1px solid #FF4500; color: #FF4500; background: #fff;
+  border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.orders-entry-btn:hover { background: #fff4ec; }
 </style>
 
 <style>

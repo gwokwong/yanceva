@@ -19,6 +19,7 @@ from datetime import datetime
 from openai import OpenAI
 
 from ..config import Config
+from ..scenarios import DEFAULT_SCENARIO, get_scenario, Scenario
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
 from ..utils.openai_chat_compat import create_chat_completion, extract_chat_completion_text
@@ -152,28 +153,31 @@ class SimulationParameters:
     project_id: str
     graph_id: str
     simulation_requirement: str
-    
+
+    # 场景标识（public_opinion / ecommerce）
+    scenario: str = DEFAULT_SCENARIO
+
     # 时间配置
     time_config: TimeSimulationConfig = field(default_factory=TimeSimulationConfig)
-    
+
     # Agent配置列表
     agent_configs: List[AgentActivityConfig] = field(default_factory=list)
-    
+
     # 事件配置
     event_config: EventConfig = field(default_factory=EventConfig)
-    
+
     # 平台配置
     twitter_config: Optional[PlatformConfig] = None
     reddit_config: Optional[PlatformConfig] = None
-    
+
     # LLM配置
     llm_model: str = ""
     llm_base_url: str = ""
-    
+
     # 生成元数据
     generated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     generation_reasoning: str = ""  # LLM的推理说明
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         time_dict = asdict(self.time_config)
@@ -182,6 +186,7 @@ class SimulationParameters:
             "project_id": self.project_id,
             "graph_id": self.graph_id,
             "simulation_requirement": self.simulation_requirement,
+            "scenario": self.scenario,
             "time_config": time_dict,
             "agent_configs": [asdict(a) for a in self.agent_configs],
             "event_config": asdict(self.event_config),
@@ -227,19 +232,23 @@ class SimulationConfigGenerator:
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model_name: Optional[str] = None
+        model_name: Optional[str] = None,
+        scenario: Optional[Scenario] = None,
     ):
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model_name = model_name or Config.LLM_MODEL_NAME
-        
+
         if not self.api_key:
             raise ValueError("LLM_API_KEY 未配置")
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
         )
+
+        # 场景包：决定时间/事件/Agent 配置 prompt 与规则兜底
+        self.scenario = scenario or get_scenario(DEFAULT_SCENARIO)
     
     def generate_config(
         self,
@@ -365,6 +374,7 @@ class SimulationConfigGenerator:
             project_id=project_id,
             graph_id=graph_id,
             simulation_requirement=simulation_requirement,
+            scenario=self.scenario.name,
             time_config=time_config,
             agent_configs=all_agent_configs,
             event_config=event_config,
@@ -538,77 +548,29 @@ class SimulationConfigGenerator:
         """生成时间配置"""
         # 使用配置的上下文截断长度
         context_truncated = context[:self.TIME_CONFIG_CONTEXT_LENGTH]
-        
+
         # 计算最大允许值（80%的agent数）
         max_agents_allowed = max(1, int(num_entities * 0.9))
-        
-        prompt = f"""基于以下模拟需求，生成时间模拟配置。
 
-{context_truncated}
+        prompt = self.scenario.time_config_prompt.format(
+            context_truncated=context_truncated,
+            max_agents_allowed=max_agents_allowed,
+        )
 
-## 任务
-请生成时间配置JSON。
-
-### 基本原则（仅供参考，需根据具体事件和参与群体灵活调整）：
-- 请根据模拟场景推断目标用户群体所在时区和作息习惯，以下为东八区(UTC+8)的参考示例
-- 凌晨0-5点几乎无人活动（活跃度系数0.05）
-- 早上6-8点逐渐活跃（活跃度系数0.4）
-- 工作时间9-18点中等活跃（活跃度系数0.7）
-- 晚间19-22点是高峰期（活跃度系数1.5）
-- 23点后活跃度下降（活跃度系数0.5）
-- 一般规律：凌晨低活跃、早间渐增、工作时段中等、晚间高峰
-- **重要**：以下示例值仅供参考，你需要根据事件性质、参与群体特点来调整具体时段
-  - 例如：学生群体高峰可能是21-23点；媒体全天活跃；官方机构只在工作时间
-  - 例如：突发热点可能导致深夜也有讨论，off_peak_hours 可适当缩短
-
-### 返回JSON格式（不要markdown）
-
-示例：
-{{
-    "total_simulation_hours": 72,
-    "minutes_per_round": 60,
-    "agents_per_hour_min": 5,
-    "agents_per_hour_max": 50,
-    "peak_hours": [19, 20, 21, 22],
-    "off_peak_hours": [0, 1, 2, 3, 4, 5],
-    "morning_hours": [6, 7, 8],
-    "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
-    "reasoning": "针对该事件的时间配置说明"
-}}
-
-字段说明：
-- total_simulation_hours (int): 模拟总时长，24-168小时，突发事件短、持续话题长
-- minutes_per_round (int): 每轮时长，30-120分钟，建议60分钟
-- agents_per_hour_min (int): 每小时最少激活Agent数（取值范围: 1-{max_agents_allowed}）
-- agents_per_hour_max (int): 每小时最多激活Agent数（取值范围: 1-{max_agents_allowed}）
-- peak_hours (int数组): 高峰时段，根据事件参与群体调整
-- off_peak_hours (int数组): 低谷时段，通常深夜凌晨
-- morning_hours (int数组): 早间时段
-- work_hours (int数组): 工作时段
-- reasoning (string): 简要说明为什么这样配置"""
-
-        system_prompt = "你是社交媒体模拟专家。返回纯JSON格式，时间配置需符合模拟场景中目标用户群体的作息习惯。"
-        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
+        system_prompt = f"{self.scenario.time_config_system_prompt}\n\n{get_language_instruction()}"
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
         except Exception as e:
             logger.warning(f"时间配置LLM生成失败: {e}, 使用默认配置")
             return self._get_default_time_config(num_entities)
-    
+
     def _get_default_time_config(self, num_entities: int) -> Dict[str, Any]:
-        """获取默认时间配置（中国人作息）"""
-        return {
-            "total_simulation_hours": 72,
-            "minutes_per_round": 60,  # 每轮1小时，加快时间流速
-            "agents_per_hour_min": max(1, num_entities // 15),
-            "agents_per_hour_max": max(5, num_entities // 5),
-            "peak_hours": [19, 20, 21, 22],
-            "off_peak_hours": [0, 1, 2, 3, 4, 5],
-            "morning_hours": [6, 7, 8],
-            "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
-            "reasoning": "使用默认中国人作息配置（每轮1小时）"
-        }
+        """获取默认时间配置（来自场景包；agents_per_hour 按实体数动态计算）"""
+        default = dict(self.scenario.default_time_config)
+        default["agents_per_hour_min"] = max(1, num_entities // 15)
+        default["agents_per_hour_max"] = max(5, num_entities // 5)
+        return default
     
     def _parse_time_config(self, result: Dict[str, Any], num_entities: int) -> TimeSimulationConfig:
         """解析时间配置结果，并验证agents_per_hour值不超过总agent数"""
@@ -674,38 +636,14 @@ class SimulationConfigGenerator:
         
         # 使用配置的上下文截断长度
         context_truncated = context[:self.EVENT_CONFIG_CONTEXT_LENGTH]
-        
-        prompt = f"""基于以下模拟需求，生成事件配置。
 
-模拟需求: {simulation_requirement}
+        prompt = self.scenario.event_config_prompt.format(
+            simulation_requirement=simulation_requirement,
+            context_truncated=context_truncated,
+            type_info=type_info,
+        )
 
-{context_truncated}
-
-## 可用实体类型及示例
-{type_info}
-
-## 任务
-请生成事件配置JSON：
-- 提取热点话题关键词
-- 描述舆论发展方向
-- 设计初始帖子内容，**每个帖子必须指定 poster_type（发布者类型）**
-
-**重要**: poster_type 必须从上面的"可用实体类型"中选择，这样初始帖子才能分配给合适的 Agent 发布。
-例如：官方声明应由 Official/University 类型发布，新闻由 MediaOutlet 发布，学生观点由 Student 发布。
-
-返回JSON格式（不要markdown）：
-{{
-    "hot_topics": ["关键词1", "关键词2", ...],
-    "narrative_direction": "<舆论发展方向描述>",
-    "initial_posts": [
-        {{"content": "帖子内容", "poster_type": "实体类型（必须从可用类型中选择）"}},
-        ...
-    ],
-    "reasoning": "<简要说明>"
-}}"""
-
-        system_prompt = "你是舆论分析专家。返回纯JSON格式。注意 poster_type 必须精确匹配可用实体类型。"
-        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}\nIMPORTANT: The 'poster_type' field value MUST be in English PascalCase exactly matching the available entity types. Only 'content', 'narrative_direction', 'hot_topics' and 'reasoning' fields should use the specified language."
+        system_prompt = f"{self.scenario.event_config_system_prompt}\n\n{get_language_instruction()}\nIMPORTANT: The 'poster_type' field value MUST be in English PascalCase exactly matching the available entity types. Only 'content', 'narrative_direction', 'hot_topics' and 'reasoning' fields should use the specified language."
 
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
@@ -715,14 +653,18 @@ class SimulationConfigGenerator:
                 "hot_topics": [],
                 "narrative_direction": "",
                 "initial_posts": [],
+                "scheduled_events": [],
                 "reasoning": "使用默认配置"
             }
-    
+
     def _parse_event_config(self, result: Dict[str, Any]) -> EventConfig:
-        """解析事件配置结果"""
+        """解析事件配置结果（scheduled_events 仅在场景启用时采纳）"""
+        scheduled_events = []
+        if self.scenario.scheduled_events_enabled:
+            scheduled_events = result.get("scheduled_events", []) or []
         return EventConfig(
             initial_posts=result.get("initial_posts", []),
-            scheduled_events=[],
+            scheduled_events=scheduled_events,
             hot_topics=result.get("hot_topics", []),
             narrative_direction=result.get("narrative_direction", "")
         )
@@ -733,13 +675,10 @@ class SimulationConfigGenerator:
         agent_configs: List[AgentActivityConfig]
     ) -> EventConfig:
         """
-        为初始帖子分配合适的发布者 Agent
-        
-        根据每个帖子的 poster_type 匹配最合适的 agent_id
+        为初始帖子和定时事件分配合适的发布者 Agent
+
+        根据每个帖子/事件的 poster_type 匹配最合适的 agent_id
         """
-        if not event_config.initial_posts:
-            return event_config
-        
         # 按实体类型建立 agent 索引
         agents_by_type: Dict[str, List[AgentActivityConfig]] = {}
         for agent in agent_configs:
@@ -747,69 +686,83 @@ class SimulationConfigGenerator:
             if etype not in agents_by_type:
                 agents_by_type[etype] = []
             agents_by_type[etype].append(agent)
-        
-        # 类型映射表（处理 LLM 可能输出的不同格式）
-        type_aliases = {
-            "official": ["official", "university", "governmentagency", "government"],
-            "university": ["university", "official"],
-            "mediaoutlet": ["mediaoutlet", "media"],
-            "student": ["student", "person"],
-            "professor": ["professor", "expert", "teacher"],
-            "alumni": ["alumni", "person"],
-            "organization": ["organization", "ngo", "company", "group"],
-            "person": ["person", "student", "alumni"],
-        }
-        
+
+        # 类型映射表（来自场景包，处理 LLM 可能输出的不同格式）
+        type_aliases = self.scenario.type_aliases
+
         # 记录每种类型已使用的 agent 索引，避免重复使用同一个 agent
         used_indices: Dict[str, int] = {}
-        
-        updated_posts = []
-        for post in event_config.initial_posts:
-            poster_type = post.get("poster_type", "").lower()
-            content = post.get("content", "")
-            
-            # 尝试找到匹配的 agent
-            matched_agent_id = None
-            
+
+        def _match_agent(poster_type: str) -> Optional[int]:
+            poster_type = (poster_type or "").lower()
+
             # 1. 直接匹配
             if poster_type in agents_by_type:
                 agents = agents_by_type[poster_type]
                 idx = used_indices.get(poster_type, 0) % len(agents)
-                matched_agent_id = agents[idx].agent_id
                 used_indices[poster_type] = idx + 1
-            else:
-                # 2. 使用别名匹配
-                for alias_key, aliases in type_aliases.items():
-                    if poster_type in aliases or alias_key == poster_type:
-                        for alias in aliases:
-                            if alias in agents_by_type:
-                                agents = agents_by_type[alias]
-                                idx = used_indices.get(alias, 0) % len(agents)
-                                matched_agent_id = agents[idx].agent_id
-                                used_indices[alias] = idx + 1
-                                break
-                    if matched_agent_id is not None:
-                        break
-            
-            # 3. 如果仍未找到，使用影响力最高的 agent
+                return agents[idx].agent_id
+
+            # 2. 使用别名匹配
+            for alias_key, aliases in type_aliases.items():
+                if poster_type in aliases or alias_key == poster_type:
+                    for alias in aliases:
+                        if alias in agents_by_type:
+                            agents = agents_by_type[alias]
+                            idx = used_indices.get(alias, 0) % len(agents)
+                            used_indices[alias] = idx + 1
+                            return agents[idx].agent_id
+            return None
+
+        def _fallback_agent() -> int:
+            # 使用影响力最高的 agent 兜底
+            if agent_configs:
+                sorted_agents = sorted(
+                    agent_configs, key=lambda a: a.influence_weight, reverse=True
+                )
+                return sorted_agents[0].agent_id
+            return 0
+
+        updated_posts = []
+        for post in event_config.initial_posts:
+            poster_type = post.get("poster_type", "").lower()
+            content = post.get("content", "")
+
+            matched_agent_id = _match_agent(poster_type)
             if matched_agent_id is None:
                 logger.warning(f"未找到类型 '{poster_type}' 的匹配 Agent，使用影响力最高的 Agent")
-                if agent_configs:
-                    # 按影响力排序，选择影响力最高的
-                    sorted_agents = sorted(agent_configs, key=lambda a: a.influence_weight, reverse=True)
-                    matched_agent_id = sorted_agents[0].agent_id
-                else:
-                    matched_agent_id = 0
-            
+                matched_agent_id = _fallback_agent()
+
             updated_posts.append({
                 "content": content,
                 "poster_type": post.get("poster_type", "Unknown"),
                 "poster_agent_id": matched_agent_id
             })
-            
+
             logger.info(f"初始帖子分配: poster_type='{poster_type}' -> agent_id={matched_agent_id}")
-        
+
         event_config.initial_posts = updated_posts
+
+        # 定时事件同样分配发布者 Agent（模拟中途由脚本按 trigger_round 注入）
+        updated_events = []
+        for event in event_config.scheduled_events:
+            poster_type = event.get("poster_type", "").lower()
+            matched_agent_id = _match_agent(poster_type)
+            if matched_agent_id is None:
+                logger.warning(f"未找到定时事件类型 '{poster_type}' 的匹配 Agent，使用影响力最高的 Agent")
+                matched_agent_id = _fallback_agent()
+
+            updated_events.append({
+                "content": event.get("content", ""),
+                "poster_type": event.get("poster_type", "Unknown"),
+                "poster_agent_id": matched_agent_id,
+                "trigger_round": int(event.get("trigger_round", 0) or 0),
+                "event_name": event.get("event_name", ""),
+            })
+            logger.info(f"定时事件分配: '{event.get('event_name', '')}' "
+                        f"poster_type='{poster_type}' -> agent_id={matched_agent_id}")
+
+        event_config.scheduled_events = updated_events
         return event_config
     
     def _generate_agent_configs_batch(
@@ -832,44 +785,12 @@ class SimulationConfigGenerator:
                 "summary": e.summary[:summary_len] if e.summary else ""
             })
         
-        prompt = f"""基于以下信息，为每个实体生成社交媒体活动配置。
+        prompt = self.scenario.agent_config_prompt.format(
+            simulation_requirement=simulation_requirement,
+            entity_list_json=json.dumps(entity_list, ensure_ascii=False, indent=2),
+        )
 
-模拟需求: {simulation_requirement}
-
-## 实体列表
-```json
-{json.dumps(entity_list, ensure_ascii=False, indent=2)}
-```
-
-## 任务
-为每个实体生成活动配置，注意：
-- **时间符合目标用户群体作息**：以下为参考（东八区），请根据模拟场景调整
-- **官方机构**（University/GovernmentAgency）：活跃度低(0.1-0.3)，工作时间(9-17)活动，响应慢(60-240分钟)，影响力高(2.5-3.0)
-- **媒体**（MediaOutlet）：活跃度中(0.4-0.6)，全天活动(8-23)，响应快(5-30分钟)，影响力高(2.0-2.5)
-- **个人**（Student/Person/Alumni）：活跃度高(0.6-0.9)，主要晚间活动(18-23)，响应快(1-15分钟)，影响力低(0.8-1.2)
-- **公众人物/专家**：活跃度中(0.4-0.6)，影响力中高(1.5-2.0)
-
-返回JSON格式（不要markdown）：
-{{
-    "agent_configs": [
-        {{
-            "agent_id": <必须与输入一致>,
-            "activity_level": <0.0-1.0>,
-            "posts_per_hour": <发帖频率>,
-            "comments_per_hour": <评论频率>,
-            "active_hours": [<活跃小时列表，考虑中国人作息>],
-            "response_delay_min": <最小响应延迟分钟>,
-            "response_delay_max": <最大响应延迟分钟>,
-            "sentiment_bias": <-1.0到1.0>,
-            "stance": "<supportive/opposing/neutral/observer>",
-            "influence_weight": <影响力权重>
-        }},
-        ...
-    ]
-}}"""
-
-        system_prompt = "你是社交媒体行为分析专家。返回纯JSON，配置需符合模拟场景中目标用户群体的作息习惯。"
-        system_prompt = f"{system_prompt}\n\n{get_language_instruction()}\nIMPORTANT: The 'stance' field value MUST be one of the English strings: 'supportive', 'opposing', 'neutral', 'observer'. All JSON field names and numeric values must remain unchanged. Only natural language text fields should use the specified language."
+        system_prompt = f"{self.scenario.agent_config_system_prompt}\n\n{get_language_instruction()}\nIMPORTANT: The 'stance' field value MUST be one of the English strings: 'supportive', 'opposing', 'neutral', 'observer'. All JSON field names and numeric values must remain unchanged. Only natural language text fields should use the specified language."
 
         try:
             result = self._call_llm_with_retry(prompt, system_prompt)
@@ -908,86 +829,24 @@ class SimulationConfigGenerator:
         return configs
     
     def _generate_agent_config_by_rule(self, entity: EntityNode) -> Dict[str, Any]:
-        """基于规则生成单个Agent配置（中国人作息）"""
+        """基于规则生成单个Agent配置（配置表来自场景包）"""
         entity_type = (entity.get_entity_type() or "Unknown").lower()
-        
-        if entity_type in ["university", "governmentagency", "ngo"]:
-            # 官方机构：工作时间活动，低频率，高影响力
-            return {
-                "activity_level": 0.2,
-                "posts_per_hour": 0.1,
-                "comments_per_hour": 0.05,
-                "active_hours": list(range(9, 18)),  # 9:00-17:59
-                "response_delay_min": 60,
-                "response_delay_max": 240,
-                "sentiment_bias": 0.0,
-                "stance": "neutral",
-                "influence_weight": 3.0
-            }
-        elif entity_type in ["mediaoutlet"]:
-            # 媒体：全天活动，中等频率，高影响力
-            return {
-                "activity_level": 0.5,
-                "posts_per_hour": 0.8,
-                "comments_per_hour": 0.3,
-                "active_hours": list(range(7, 24)),  # 7:00-23:59
-                "response_delay_min": 5,
-                "response_delay_max": 30,
-                "sentiment_bias": 0.0,
-                "stance": "observer",
-                "influence_weight": 2.5
-            }
-        elif entity_type in ["professor", "expert", "official"]:
-            # 专家/教授：工作+晚间活动，中等频率
-            return {
-                "activity_level": 0.4,
-                "posts_per_hour": 0.3,
-                "comments_per_hour": 0.5,
-                "active_hours": list(range(8, 22)),  # 8:00-21:59
-                "response_delay_min": 15,
-                "response_delay_max": 90,
-                "sentiment_bias": 0.0,
-                "stance": "neutral",
-                "influence_weight": 2.0
-            }
-        elif entity_type in ["student"]:
-            # 学生：晚间为主，高频率
-            return {
-                "activity_level": 0.8,
-                "posts_per_hour": 0.6,
-                "comments_per_hour": 1.5,
-                "active_hours": [8, 9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23],  # 上午+晚间
-                "response_delay_min": 1,
-                "response_delay_max": 15,
-                "sentiment_bias": 0.0,
-                "stance": "neutral",
-                "influence_weight": 0.8
-            }
-        elif entity_type in ["alumni"]:
-            # 校友：晚间为主
-            return {
-                "activity_level": 0.6,
-                "posts_per_hour": 0.4,
-                "comments_per_hour": 0.8,
-                "active_hours": [12, 13, 19, 20, 21, 22, 23],  # 午休+晚间
-                "response_delay_min": 5,
-                "response_delay_max": 30,
-                "sentiment_bias": 0.0,
-                "stance": "neutral",
-                "influence_weight": 1.0
-            }
-        else:
-            # 普通人：晚间高峰
-            return {
-                "activity_level": 0.7,
-                "posts_per_hour": 0.5,
-                "comments_per_hour": 1.2,
-                "active_hours": [9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23],  # 白天+晚间
-                "response_delay_min": 2,
-                "response_delay_max": 20,
-                "sentiment_bias": 0.0,
-                "stance": "neutral",
-                "influence_weight": 1.0
-            }
+
+        config = self.scenario.find_rule_agent_config(entity_type)
+        if config is not None:
+            return config
+
+        # 场景未定义的类型：普通默认配置（晚间高峰）
+        return {
+            "activity_level": 0.7,
+            "posts_per_hour": 0.5,
+            "comments_per_hour": 1.2,
+            "active_hours": [9, 10, 11, 12, 13, 18, 19, 20, 21, 22, 23],
+            "response_delay_min": 2,
+            "response_delay_max": 20,
+            "sentiment_bias": 0.0,
+            "stance": "neutral",
+            "influence_weight": 1.0,
+        }
     
 

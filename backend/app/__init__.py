@@ -40,7 +40,20 @@ def create_app(config_class=Config):
         logger.info("=" * 50)
     
     # 启用CORS
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    cors_origins = [o.strip() for o in Config.CORS_ORIGINS.split(',') if o.strip()] or '*'
+    CORS(app, resources={r"/api/*": {"origins": cors_origins}})
+
+    if Config.PAYMENT_MODE == 'dev':
+        logger.warning(
+            "=" * 60)
+        logger.warning(
+            "⚠️  PAYMENT_MODE=dev：免费支付通道的状态取决于 ALLOW_DEV_PAYMENT。"
+        )
+        logger.warning(
+            "   生产部署请设置 PAYMENT_MODE=stripe 并配置 STRIPE_API_KEY！"
+        )
+        logger.warning(
+            "=" * 60)
     
     # 注册模拟进程清理函数（确保服务器关闭时终止所有模拟进程）
     from .services.simulation_runner import SimulationRunner
@@ -63,15 +76,35 @@ def create_app(config_class=Config):
         return response
     
     # 注册蓝图
-    from .api import graph_bp, simulation_bp, report_bp
+    from .api import graph_bp, simulation_bp, report_bp, campaign_bp, order_bp
     app.register_blueprint(graph_bp, url_prefix='/api/graph')
     app.register_blueprint(simulation_bp, url_prefix='/api/simulation')
     app.register_blueprint(report_bp, url_prefix='/api/report')
+    app.register_blueprint(campaign_bp, url_prefix='/api/campaign')
+    app.register_blueprint(order_bp, url_prefix='/api/orders')
     
     # 健康检查
     @app.route('/health')
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
+
+    # 生产部署：直接服务前端构建产物（frontend/dist），SPA fallback
+    frontend_dist = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), '../../frontend/dist'))
+    if os.path.isdir(frontend_dist):
+        from flask import send_from_directory
+
+        @app.route('/')
+        @app.route('/<path:spa_path>')
+        def spa_frontend(spa_path: str = 'index.html'):
+            full = os.path.normpath(os.path.join(frontend_dist, spa_path))
+            if full.startswith(frontend_dist) and os.path.isfile(full):
+                return send_from_directory(frontend_dist, spa_path)
+            # SPA 路由（/orders 等）回退到 index.html
+            return send_from_directory(frontend_dist, 'index.html')
+
+        if should_log_startup:
+            logger.info(f"前端静态资源已挂载: {frontend_dist}")
     
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")

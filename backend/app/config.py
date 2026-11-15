@@ -28,9 +28,22 @@ class Config:
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+    # 端点单次输出 tokens 上限（可选；DeepSeek=8192。设置后 graphiti 的
+    # 大 max_tokens 请求会被钳制，避免 400）
+    LLM_MAX_OUTPUT_TOKENS = (
+        int(os.environ.get('LLM_MAX_OUTPUT_TOKENS', '0') or 0) or None
+    )
     
-    # Zep配置
-    ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+    # 图谱后端配置（Graphiti + Neo4j，取代原 Zep Cloud）
+    NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
+    NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
+    NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
+
+    # Embedding 配置（Graphiti 向量检索用；缺省回退到 LLM_* 端点）
+    EMBEDDING_API_KEY = os.environ.get('EMBEDDING_API_KEY') or os.environ.get('LLM_API_KEY')
+    EMBEDDING_BASE_URL = os.environ.get('EMBEDDING_BASE_URL') or os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
+    EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL_NAME', 'text-embedding-v4')
+    EMBEDDING_DIM = int(os.environ.get('EMBEDDING_DIM', '0') or 0) or None
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -59,6 +72,33 @@ class Config:
     REPORT_AGENT_MAX_TOOL_CALLS = int(os.environ.get('REPORT_AGENT_MAX_TOOL_CALLS', '5'))
     REPORT_AGENT_MAX_REFLECTION_ROUNDS = int(os.environ.get('REPORT_AGENT_MAX_REFLECTION_ROUNDS', '2'))
     REPORT_AGENT_TEMPERATURE = float(os.environ.get('REPORT_AGENT_TEMPERATURE', '0.5'))
+
+    # ===== 平台订单/支付配置 =====
+    # 支付模式：dev（默认，未配置支付渠道时自动标记已支付，仅限本地开发）
+    #          stripe（需 STRIPE_API_KEY；Checkout 托管收银台 + webhook 回调）
+    PAYMENT_MODE = os.environ.get('PAYMENT_MODE', 'dev')
+    # 邮件通知（Resend，免费 100 封/天；未配置则静默跳过）
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
+    RESEND_FROM_EMAIL = os.environ.get('RESEND_FROM_EMAIL', 'onboarding@resend.dev')
+    # 美元→人民币参考汇率（仅用于前端展示；实际扣款由 Creem 按实时汇率结算）
+    USD_TO_CNY_RATE = float(os.environ.get('USD_TO_CNY_RATE', '7.25'))  # dev | stripe | creem
+    # Creem（MoR，个人可接，支付宝直提人民币）：https://creem.io
+    CREEM_API_KEY = os.environ.get('CREEM_API_KEY')
+    CREEM_WEBHOOK_SECRET = os.environ.get('CREEM_WEBHOOK_SECRET')
+    # 生产环境必须保持 False（否则免费"支付"任意订单）；本地开发设 True
+    ALLOW_DEV_PAYMENT = os.environ.get('ALLOW_DEV_PAYMENT', 'false').lower() == 'true'
+    # 运维查询全部订单的管理密钥（可选；不配则只能按 user_email 查询）
+    ADMIN_KEY = os.environ.get('ADMIN_KEY')
+    # CORS 允许来源（逗号分隔；默认 * 保持本地开发兼容，生产建议锁定前端域名）
+    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', '*')
+    STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
+    STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    # 支付成功后的前端跳转地址（Stripe Checkout 用）
+    PAYMENT_SUCCESS_URL = os.environ.get(
+        'PAYMENT_SUCCESS_URL', 'http://localhost:3000/orders?paid=1')
+    # Worker 配置
+    WORKER_CONCURRENCY = int(os.environ.get('WORKER_CONCURRENCY', '1'))
+    WORKER_POLL_INTERVAL = int(os.environ.get('WORKER_POLL_INTERVAL', '5'))
     
     @classmethod
     def validate(cls) -> list[str]:
@@ -66,10 +106,8 @@ class Config:
         errors: list[str] = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
-        if os.environ.get("ZEP_API_URL"):
-            errors.append("ZEP_API_URL 不受支持；MiroFish 仅连接 Zep Cloud")
+        if not cls.NEO4J_PASSWORD:
+            errors.append("NEO4J_PASSWORD 未配置")
         if cls.DEBUG:
             import warnings
             warnings.warn("Flask DEBUG mode is enabled. Do not use in production.", RuntimeWarning)

@@ -1098,6 +1098,61 @@ class PlatformSimulation:
         self.total_actions = 0
 
 
+def build_scheduled_event_actions(
+    config: Dict[str, Any],
+    round_num: int,
+    result: "PlatformSimulation",
+    agent_names: Dict[int, str],
+    action_logger,
+    log_info,
+    logged_round: Optional[int] = None,
+) -> Dict[Any, Any]:
+    """构建本轮需要注入的定时事件动作（ManualAction CREATE_POST）。
+
+    事件语义：``trigger_round`` 与 actions.jsonl 中 1 起点的 round 字段一致
+    （round 0 保留给初始帖子）。到达触发轮时由模拟循环注入事件帖，完全
+    复用初始帖子的 ManualAction 注入先例；未配置事件时返回空 dict，
+    对原主循环零影响。
+    """
+    event_config = config.get("event_config", {})
+    scheduled_events = event_config.get("scheduled_events") or []
+    if not scheduled_events:
+        return {}
+
+    target_round = logged_round if logged_round is not None else round_num
+    actions: Dict[Any, Any] = {}
+    for event in scheduled_events:
+        try:
+            trigger = int(event.get("trigger_round", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if trigger != target_round:
+            continue
+
+        agent_id = event.get("poster_agent_id", 0)
+        content = event.get("content", "")
+        event_name = event.get("event_name", "")
+        try:
+            agent = result.env.agent_graph.get_agent(agent_id)
+            actions[agent] = ManualAction(
+                action_type=ActionType.CREATE_POST,
+                action_args={"content": content}
+            )
+            if action_logger:
+                action_logger.log_action(
+                    round_num=target_round,
+                    agent_id=agent_id,
+                    agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
+                    action_type="CREATE_POST",
+                    action_args={"content": content},
+                    result=f"[scheduled_event] {event_name}",
+                )
+            log_info(f"注入定时事件 '{event_name}' (round {target_round}): {content[:50]}...")
+        except Exception as error:
+            log_info(f"定时事件 '{event_name}' 注入失败 (round {target_round}): {error}")
+    return actions
+
+
 async def run_twitter_simulation(
     config: Dict[str, Any], 
     simulation_dir: str,
@@ -1244,13 +1299,20 @@ async def run_twitter_simulation(
         if action_logger:
             action_logger.log_round_start(round_num + 1, simulated_hour)
         
-        if not active_agents:
-            # 没有活跃agent时也记录round结束（actions_count=0）
+        # 定时事件注入（trigger_round 与 actions.jsonl 中 1 起点的 round 一致）
+        event_actions = build_scheduled_event_actions(
+            config, round_num, result, agent_names, action_logger, log_info,
+            logged_round=round_num + 1,
+        )
+
+        if not active_agents and not event_actions:
+            # 没有活跃agent也没有定时事件时记录round结束（actions_count=0）
             if action_logger:
                 action_logger.log_round_end(round_num + 1, 0)
             continue
         
         actions = {agent: LLMAction() for _, agent in active_agents}
+        actions.update(event_actions)
         await result.env.step(actions)
         
         # 从数据库获取实际执行的动作并记录
@@ -1443,13 +1505,20 @@ async def run_reddit_simulation(
         if action_logger:
             action_logger.log_round_start(round_num + 1, simulated_hour)
         
-        if not active_agents:
-            # 没有活跃agent时也记录round结束（actions_count=0）
+        # 定时事件注入（trigger_round 与 actions.jsonl 中 1 起点的 round 一致）
+        event_actions = build_scheduled_event_actions(
+            config, round_num, result, agent_names, action_logger, log_info,
+            logged_round=round_num + 1,
+        )
+
+        if not active_agents and not event_actions:
+            # 没有活跃agent也没有定时事件时记录round结束（actions_count=0）
             if action_logger:
                 action_logger.log_round_end(round_num + 1, 0)
             continue
         
         actions = {agent: LLMAction() for _, agent in active_agents}
+        actions.update(event_actions)
         await result.env.step(actions)
         
         # 从数据库获取实际执行的动作并记录
