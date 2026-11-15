@@ -136,6 +136,29 @@ _CHROME = {
 }
 
 
+import re as _re
+
+_DANGEROUS_BLOCK = _re.compile(
+    r'<\s*(script|iframe|object|embed|form|link|meta)[^>]*>.*?<\s*/\s*\1\s*>',
+    _re.IGNORECASE | _re.DOTALL,
+)
+_DANGEROUS_SELF = _re.compile(
+    r'<\s*(script|iframe|object|embed|link|meta|base)[^>]*/?>',
+    _re.IGNORECASE,
+)
+_EVENT_ATTRS = _re.compile(r"\son\w+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", _re.IGNORECASE)
+_JS_URL = _re.compile(r'(href|src)\s*=\s*["\']?\s*(javascript|vbscript|data\s*:\s*text)', _re.IGNORECASE)
+
+
+def _sanitize_html(html: str) -> str:
+    """剥除危险标签/事件属性/js 协议——LLM 输出不可信，交付物在客户浏览器渲染。"""
+    html = _DANGEROUS_BLOCK.sub('', html)
+    html = _DANGEROUS_SELF.sub('', html)
+    html = _EVENT_ATTRS.sub('', html)
+    html = _JS_URL.sub(r'\1="#"', html)
+    return html
+
+
 def build_deliverable_html(
     *,
     product_name: str,
@@ -160,6 +183,7 @@ def build_deliverable_html(
     body_html = markdown_lib.markdown(
         report_markdown or "", extensions=["tables", "fenced_code"]
     )
+    body_html = _sanitize_html(body_html)
     charts = _metric_charts(series, t)
     table = _metric_table(series, t)
 

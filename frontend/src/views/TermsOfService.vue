@@ -56,7 +56,7 @@ const CONTENT = {
       ['7. Liability', `
         <p>The service is provided "as is". To the maximum extent permitted by law, our total
         liability for any claim is limited to the amount you paid for the order in question.</p>`],
-      ['8. Contact', `<p>Questions about these terms: support@example.com</p>`],
+      ['8. Contact', `<p>Questions about these terms: gwokwong@gmail.com</p>`],
     ],
   },
   zh: {
@@ -87,7 +87,7 @@ const CONTENT = {
       ['7. 责任限制', `
         <p>服务按"现状"提供。在法律允许的最大范围内，我们对任何索赔的责任上限为您为该订单
         实际支付的金额。</p>`],
-      ['8. 联系我们', `<p>关于本条款的疑问：support@example.com</p>`],
+      ['8. 联系我们', `<p>关于本条款的疑问：gwokwong@gmail.com</p>`],
     ],
   },
 }

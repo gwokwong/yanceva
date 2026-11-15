@@ -93,7 +93,10 @@ def create_order():
         payload_raw = request.form.get('payload', '{}')
 
         product = ProductManager.get_product(product_id)
-        if product is None or not product.active or product.hidden:
+        if product is None or not product.active:
+            return jsonify({"success": False, "error": "商品不存在或已下架"}), 400
+        # hidden SKU（内部验证）仅允许本地开发模式下单，生产环境拦截
+        if product.hidden and not Config.ALLOW_DEV_PAYMENT:
             return jsonify({"success": False, "error": "商品不存在或已下架"}), 400
         if not user_email or '@' not in user_email:
             return jsonify({"success": False, "error": "请提供有效的联系邮箱"}), 400

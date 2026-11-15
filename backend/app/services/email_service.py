@@ -41,6 +41,12 @@ def send_order_completed(
         logger.info(f"邮件未配置（RESEND_API_KEY 缺失），跳过发送: {order_id}")
         return False
 
+    # 基本校验：防止 CRLF/头注入（Resend API 也会拒绝非法地址，双保险）
+    import re as _re
+    if not user_email or not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", user_email):
+        logger.warning(f"邮箱格式非法，跳过发送: {user_email!r}")
+        return False
+
     from_url = Config.RESEND_FROM_EMAIL or "onboarding@resend.dev"
     templates = _EMAIL_TEMPLATES.get(language if language in _EMAIL_TEMPLATES else "zh")
     subject = templates["subject"].format(title=title)

@@ -45,7 +45,7 @@ const CONTENT = {
         <p>Depending on your jurisdiction (e.g. GDPR for EU residents) you have the right to
         access, correct, export and delete your personal data, and to object to processing.
         Contact us at the email below to exercise these rights.</p>`],
-      ['5. Contact', `<p>Questions about this policy: support@example.com</p>`],
+      ['5. Contact', `<p>Questions about this policy: gwokwong@gmail.com</p>`],
     ],
   },
   zh: {
@@ -69,7 +69,7 @@ const CONTENT = {
       ['4. 您的权利', `
         <p>根据您所在司法辖区（如欧盟 GDPR），您有权访问、更正、导出和删除您的个人数据，
         并有权拒绝特定处理。通过下方邮箱联系我们即可行使这些权利。</p>`],
-      ['5. 联系我们', `<p>关于本政策的疑问：support@example.com</p>`],
+      ['5. 联系我们', `<p>关于本政策的疑问：gwokwong@gmail.com</p>`],
     ],
   },
 }

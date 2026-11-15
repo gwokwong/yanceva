@@ -310,7 +310,8 @@ def test_stale_running_recovered_on_startup(tmp_path):
     assert worker2.recover_stale_orders(timeout_minutes=10) == 0
 
 
-def test_hidden_sku_cannot_be_ordered(order_app):
+def test_hidden_sku_cannot_be_ordered(order_app, monkeypatch):
+    monkeypatch.setattr(Config, "ALLOW_DEV_PAYMENT", False)
     res = order_app.post("/api/orders", data={
         "product_id": "ecommerce_launch_dev",
         "user_email": "buyer@example.com",

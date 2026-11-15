@@ -162,9 +162,15 @@ class OrderWorker:
             # 心跳从未更新过的新单（刚认领）不回收
             if not order.get("heartbeat_at"):
                 continue
-            self.store.requeue(order["order_id"])
-            recovered += 1
-            logger.warning(f"回收陈旧订单 {order['order_id']}（worker 失联）")
+            if self.store.requeue(order["order_id"]):
+                recovered += 1
+                logger.warning(f"回收陈旧订单 {order['order_id']}（worker 失联）")
+            else:
+                # 超过重试上限：标记失败并通知
+                self.store.set_failed(
+                    order["order_id"], "多次执行失败（超过重试上限），已停止自动重试"
+                )
+                logger.warning(f"订单 {order['order_id']} 超过重试上限，标记失败")
         return recovered
 
     def run_forever(self) -> None:

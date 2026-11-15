@@ -3,6 +3,7 @@ MiroFish Backend - Flask应用工厂
 """
 
 import os
+from pathlib import Path
 import warnings
 
 # 抑制 multiprocessing resource_tracker 的警告（来自第三方库如 transformers）
@@ -92,15 +93,35 @@ def create_app(config_class=Config):
     frontend_dist = os.path.abspath(os.path.join(
         os.path.dirname(__file__), '../../frontend/dist'))
     if os.path.isdir(frontend_dist):
-        from flask import send_from_directory
+        from flask import send_from_directory, request
+
+        # SEO 预渲染：爬虫 UA 或 ?_pre=1 时返回静态 HTML（AI 爬虫不执行 JS）
+        from .services.seo_pages import generate_all, is_crawler, _ROUTES
+        prerendered_dir = os.path.join(frontend_dist, 'prerendered')
+        try:
+            generate_all(Path(prerendered_dir))
+            if should_log_startup:
+                logger.info("SEO 静态页已生成 (dist/prerendered/)")
+        except Exception as seo_err:
+            logger.warning(f"SEO 静态页生成失败（不影响正常服务）: {seo_err}")
 
         @app.route('/')
         @app.route('/<path:spa_path>')
         def spa_frontend(spa_path: str = 'index.html'):
+            # 爬虫 → 预渲染静态页（内容完整可索引）
+            ua = request.headers.get('User-Agent', '')
+            route = '/' if spa_path == 'index.html' else '/' + spa_path.split('?')[0].rstrip('/')
+            wants_static = (
+                is_crawler(ua) or request.args.get('_pre') == '1'
+            ) and route in _ROUTES
+            if wants_static:
+                pre_dir = os.path.join(prerendered_dir, route.lstrip('/').rstrip('/'))
+                pre_file = os.path.join(pre_dir, 'index.html')
+                if os.path.isfile(pre_file):
+                    return send_from_directory(pre_dir, 'index.html')
             full = os.path.normpath(os.path.join(frontend_dist, spa_path))
             if full.startswith(frontend_dist) and os.path.isfile(full):
                 return send_from_directory(frontend_dist, spa_path)
-            # SPA 路由（/orders 等）回退到 index.html
             return send_from_directory(frontend_dist, 'index.html')
 
         if should_log_startup:

@@ -3,6 +3,11 @@
 > 基于 [MiroFish](https://github.com/666ghj/MiroFish) 多智能体预测引擎改造的**商业化预测平台**：
 > 6 个垂直预演服务在线接单，AI Agent 沙盘推演，小时级交付决策报告。
 
+> **License**: This project is a modified version of [MiroFish](https://github.com/666ghj/MiroFish), licensed under **AGPL-3.0**.
+> Per AGPL-3.0 §13, the complete modified source code is publicly available in this repository.
+> See [SOURCE-NOTICE.md](SOURCE-NOTICE.md) for the full modification list and compliance notes.
+
+
 详细操作手册见 [`docs/ecommerce-rehearsal.md`](docs/ecommerce-rehearsal.md)，本文是平台全景。
 
 ---
@@ -28,17 +33,17 @@
 
 ![营销落地页](docs/screenshots/landing.png)
 
-### 第 2 步：选择服务
+### 第 2 步：选择服务（6 大场景 7 个 SKU）
 
-订单门户展示全部 7 个 SKU（含即将上线的占位灰卡），每张卡标注价格与交付时限。
+订单门户展示全部服务卡片，每张卡标注价格与交付时限。
 
-![订单门户](docs/screenshots/orders-catalog.png)
+![订单门户](docs/screenshots/walkthrough/1-catalog.png)
 
 ### 第 3 步：填写提交表单
 
 表单按 SKU 动态渲染（JSON Schema 驱动），支持中英文表单、上传种子资料（产品文档/竞品分析/KOL 清单）、选择报告语言：
 
-![提交表单](docs/screenshots/order-form.png)
+![提交表单](docs/screenshots/walkthrough/2-form-filled.png)
 
 ### 第 4 步：支付 → 排队 → Worker 自动执行
 
@@ -50,7 +55,14 @@
 
 ### 第 5 步：拿到交付报告
 
-完成后下载品牌化 HTML 交付报告（指标图表 + Agent 原文引用 + 行动建议 + 方法论说明 + 免责声明），
+完成后订单页显示 Completed 状态与指标摘要（发帖数/轮次），一键下载品牌化 HTML 交付报告：
+
+![订单完成](docs/screenshots/walkthrough/3-order-detail.png)
+
+交付报告包含指标图表 + Agent 原文引用 + 行动建议 + 方法论说明 + 免责声明：
+
+![交付报告](docs/screenshots/walkthrough/4-report.png)
+
 也可进入在线交互报告页继续追问（ReACT Agent 支持采访模拟角色）。
 
 ![交付就绪视图](docs/screenshots/order-deliverable.png)

@@ -92,7 +92,38 @@ run_verification() {
   uv run python scripts/validate_graphiti_full_loop.py | grep -E "✓|✅|✗" | tail -3
 }
 
+# systemd 可用则用 systemd 管理（生产推荐：崩溃自动拉起 + 开机自启）
+has_systemd() {
+  [ -d /run/systemd/system ] && command -v systemctl >/dev/null
+}
+
+install_systemd() {
+  if ! has_systemd; then
+    c_warn "无 systemd（macOS/容器环境），跳过 systemd 安装"
+    return 1
+  fi
+  c_info "安装 systemd 服务..."
+  sudo cp "$ROOT/scripts/yanceva-api.service" /etc/systemd/system/
+  sudo cp "$ROOT/scripts/yanceva-worker.service" /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable yanceva-api yanceva-worker
+  c_ok "systemd 服务已安装并设为开机自启"
+}
+
 start_services() {
+  # systemd 模式：交给 systemctl（崩溃自动拉起 + 开机自启）
+  if has_systemd && systemctl list-unit-files 2>/dev/null | grep -q yanceva-api; then
+    c_info "通过 systemd 启动..."
+    sudo systemctl start yanceva-api yanceva-worker
+    sleep 2
+    curl -sf -m 5 http://localhost:5001/health >/dev/null && c_ok "API 已启动 (:5001)" \
+      || sudo journalctl -u yanceva-api -n 20 --no-pager
+    c_ok "Worker 已启动"
+    c_ok "完成！门户地址: http://localhost:5001/orders"
+    return
+  fi
+
+  # fallback：手动 daemon 模式（本地开发/macOS）
   cd "$BACKEND"
   mkdir -p "$RUN_DIR"
   c_info "启动 API（gunicorn，2进程×4线程，:5001）..."
@@ -116,9 +147,14 @@ start_services() {
 }
 
 stop_services() {
+  # systemd 模式优先
+  if has_systemd && systemctl list-unit-files 2>/dev/null | grep -q yanceva-api; then
+    sudo systemctl stop yanceva-api yanceva-worker
+    c_ok "systemd 服务已停止"
+    return
+  fi
   if [ -f "$RUN_DIR/api.pid" ]; then kill "$(cat "$RUN_DIR/api.pid")" 2>/dev/null && rm "$RUN_DIR/api.pid"; fi
   if [ -f "$RUN_DIR/worker.pid" ]; then kill "$(cat "$RUN_DIR/worker.pid")" 2>/dev/null && rm "$RUN_DIR/worker.pid"; fi
-  # 兜底清理同名进程
   pkill -f "gunicorn.*app:create_app" 2>/dev/null || true
   pkill -f "python -m app.worker" 2>/dev/null || true
   c_ok "服务已停止"
@@ -147,7 +183,12 @@ verify_all() {
 }
 
 case "${1:-help}" in
-  setup)   check_prereqs; ensure_env; start_containers; install_deps; run_verification; c_ok "部署完成！执行 bash scripts/deploy.sh start 启动服务";;
+  setup)   check_prereqs; ensure_env; start_containers; install_deps; run_verification
+           if install_systemd; then
+             c_ok "部署完成！执行 bash scripts/deploy.sh start 启动服务（systemd 自动拉起+开机自启）"
+           else
+             c_ok "部署完成！执行 bash scripts/deploy.sh start 启动服务"
+           fi;;
   start)   start_services;;
   stop)    stop_services;;
   status)  show_status;;

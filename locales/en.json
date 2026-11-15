@@ -832,7 +832,10 @@
     "t2Role": "B2B productivity tool",
     "t3Quote": "Saw exactly which user segment was about to churn and why. The response script comparison was eye-opening — we used the winning script in our actual launch.",
     "t3Name": "DTC brand owner",
-    "t3Role": "Consumer electronics"
+    "t3Role": "Consumer electronics",
+    "openSourceTitle": "Open source & self-hosted",
+    "openSourceDesc": "Built on the open-source MiroFish engine (AGPL-3.0). Want your own instance? Deploy the full stack on your own server — unlimited rehearsals, your data, your rules.",
+    "contactPrompt": "Questions? Contact us at"
   },
   "cookie": {
     "text": "We use browser localStorage to remember your language preference and session settings (no third-party ad tracking).",
@@ -843,6 +846,10 @@
   "legal": {
     "privacy": "Privacy Policy",
     "terms": "Terms of Service",
-    "contact": "Contact"
+    "contact": "Contact",
+    "sourceCode": "Source code",
+    "selfHost": "Self-host",
+    "selfHostDesc": "This platform is powered by open-source software (AGPL-3.0). You can deploy your own instance with full source code — free forever, your data stays with you.",
+    "selfHostCta": "View deployment guide"
   }
 }

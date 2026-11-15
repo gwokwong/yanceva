@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
+from graphiti_core.embedder.openai import OpenAIEmbedder as _OpenAIEmbedder
 
 from ...config import Config
 from ...utils.async_loop import run_async
@@ -101,6 +102,34 @@ class _JSONCleaningAsyncOpenAIProxy:
 
     def __getattr__(self, item):
         return getattr(object.__getattribute__(self, "_inner"), item)
+
+
+class BatchSafeEmbedder(_OpenAIEmbedder):
+    """批量拆分 Embedder：大批量拆为 ≤10 条小批（阿里云限制单次最多 10 条输入）。"""
+
+    MAX_BATCH = 10
+
+    def __init__(self, config):
+        _OpenAIEmbedder.__init__(self, config=config)
+        # 记录 config 供后续方法使用
+
+    async def create(self, input_data):
+        return await self._inner_create(input_data)
+
+    async def create_batch(self, input_data_list):
+        all_vecs = []
+        for i in range(0, len(input_data_list), self.MAX_BATCH):
+            chunk = input_data_list[i:i + self.MAX_BATCH]
+            vecs = await self._inner_create(chunk)
+            all_vecs.extend(vecs)
+        return all_vecs
+
+    async def _inner_create(self, chunk):
+        """直接调用阿里云/兼容端点创建向量（每批 ≤10 条）。"""
+        result = await self.client.embeddings.create(
+            input=chunk, model=self.config.embedding_model
+        )
+        return [d.embedding[: self.config.embedding_dim] for d in result.data]
 
 
 class CompatOpenAIGenericClient(OpenAIGenericClient):
@@ -280,7 +309,9 @@ class GraphitiStore(GraphStore):
         }
         if Config.EMBEDDING_DIM:
             embedder_config_kwargs["embedding_dim"] = Config.EMBEDDING_DIM
-        embedder = OpenAIEmbedder(config=OpenAIEmbedderConfig(**embedder_config_kwargs))
+        embedder = BatchSafeEmbedder(
+            config=OpenAIEmbedderConfig(**embedder_config_kwargs)
+        )
 
         return Graphiti(
             Config.NEO4J_URI,
@@ -750,12 +781,12 @@ class GraphitiStore(GraphStore):
         try:
             rows = run_query(
                 "CALL db.index.fulltext.queryRelationships('edge_name_and_fact', $query) "
-                "YIELD edge, score "
-                "WHERE edge.group_id = $gid "
-                "RETURN edge.uuid AS uuid, edge.name AS name, "
-                "coalesce(edge.fact_text, edge.fact, '') AS fact, "
-                "edge.source_node_uuid AS source_node_uuid, "
-                "edge.target_node_uuid AS target_node_uuid, score "
+                "YIELD relationship, score "
+                "WHERE relationship.group_id = $gid "
+                "RETURN relationship.uuid AS uuid, relationship.name AS name, "
+                "coalesce(relationship.fact_text, relationship.fact, '') AS fact, "
+                "relationship.source_node_uuid AS source_node_uuid, "
+                "relationship.target_node_uuid AS target_node_uuid, score "
                 "ORDER BY score DESC LIMIT $limit",
                 {"gid": graph_id, "query": query, "limit": limit},
                 operation_name=f"fulltext edge search {graph_id}",

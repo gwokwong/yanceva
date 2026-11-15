@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS orders (
     error          TEXT,
     cancel_requested INTEGER NOT NULL DEFAULT 0,
     heartbeat_at   TEXT,
+    retry_count    INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT,
     updated_at     TEXT,
     started_at     TEXT,
@@ -91,6 +92,10 @@ class OrderStore:
         with self._init_lock:
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
+                # 旧库迁移：补 retry_count 列（幂等）
+                cols = [r[1] for r in conn.execute("PRAGMA table_info(orders)").fetchall()]
+                if "retry_count" not in cols:
+                    conn.execute("ALTER TABLE orders ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
 
     # ── 基础 CRUD ─────────────────────────────────────────────
 
@@ -154,10 +159,15 @@ class OrderStore:
         return [self._row_to_dict(row) for row in rows]
 
     @staticmethod
-    def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    def _row_to_dict(row: sqlite3.Row, *, strip_internal: bool = True) -> Dict[str, Any]:
         data = dict(row)
         data["payload"] = json.loads(data.get("payload") or "{}")
-        data["files"] = json.loads(data.get("files") or "[]")
+        files = json.loads(data.get("files") or "[]")
+        if strip_internal:
+            # 服务器绝对路径不对外暴露
+            for f in files:
+                f.pop("path", None)
+        data["files"] = files
         data["stage_detail"] = json.loads(data.get("stage_detail") or "{}")
         data["result"] = json.loads(data["result"]) if data.get("result") else None
         data["cancel_requested"] = bool(data.get("cancel_requested"))
@@ -254,14 +264,19 @@ class OrderStore:
             )
         return cursor.rowcount > 0
 
-    def requeue(self, order_id: str) -> None:
-        """失败重试入队（Phase 2 的重试策略入口）。"""
+    MAX_RETRIES = 3
+
+    def requeue(self, order_id: str) -> bool:
+        """失败重试入队（最多 3 次，防止无限重试烧 LLM 费用）。"""
         with self._connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "UPDATE orders SET status = ?, worker_id = NULL, error = NULL, "
-                "updated_at = ? WHERE order_id = ?",
-                (STATUS_QUEUED, _now(), order_id),
+                "retry_count = retry_count + 1, updated_at = ? "
+                "WHERE order_id = ? AND status IN (?, ?, ?) AND retry_count < ?",
+                (STATUS_QUEUED, _now(), order_id, STATUS_ASSIGNED, STATUS_RUNNING,
+                 STATUS_FAILED, self.MAX_RETRIES),
             )
+            return cursor.rowcount > 0
 
     # ── 取消 ──────────────────────────────────────────────────
 

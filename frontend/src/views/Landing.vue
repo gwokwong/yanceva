@@ -112,6 +112,34 @@
       <p class="testimonial-note">{{ $t('landing.testimonialsNote') }}</p>
     </section>
 
+    <!-- Open source & self-host (AGPL compliance) -->
+    <section id="opensource" class="opensource">
+      <div class="os-grid">
+        <div class="os-left">
+          <h2>{{ $t('landing.openSourceTitle') }}</h2>
+          <p>{{ $t('landing.openSourceDesc') }}</p>
+          <div class="os-actions">
+            <a class="ghost-btn" href="https://github.com/666ghj/MiroFish" target="_blank" rel="noopener">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle;margin-right:6px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+              MiroFish Engine
+            </a>
+            <router-link class="ghost-btn" to="/privacy">{{ $t('legal.selfHostCta') }}</router-link>
+          </div>
+        </div>
+        <div class="os-right">
+          <div class="os-code">
+            <div class="os-dots"><span></span><span></span><span></span></div>
+            <pre>bash scripts/deploy.sh setup
+bash scripts/deploy.sh start
+
+# → https://your-server:5001
+#   7 scenarios · unlimited runs
+#   your data · your rules</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Final CTA -->
     <section class="final-cta">
       <h2>{{ $t('landing.finalTitle') }}</h2>
@@ -123,9 +151,14 @@
       <div class="footer-links">
         <router-link to="/privacy">{{ $t('legal.privacy') }}</router-link>
         <router-link to="/terms">{{ $t('legal.terms') }}</router-link>
-        <a href="mailto:support@example.com">{{ $t('legal.contact') }}</a>
+        <a href="mailto:gwokwong@gmail.com">{{ $t('legal.contact') }}</a>
+        <a href="https://github.com/666ghj/MiroFish" target="_blank" rel="noopener" title="Powered by MiroFish (AGPL-3.0)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="vertical-align:middle"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          <span style="margin-left:4px">GitHub</span>
+        </a>
+        <a href="https://github.com/666ghj/MiroFish" target="_blank" rel="noopener">AGPL-3.0</a>
       </div>
-      <div class="footer-note">© 2026 Yanceva Rehearsal Platform · {{ $t('landing.footerDisclaimer') }}</div>
+      <div class="footer-note">© 2026 Yanceva Rehearsal Platform · {{ $t('landing.footerDisclaimer') }} · Powered by <a href="https://github.com/666ghj/MiroFish" target="_blank" rel="noopener" style="color:#666">MiroFish</a> (AGPL-3.0) — <a :href="'https://github.com/666ghj/MiroFish'" target="_blank" style="color:#666">{{ $t('legal.sourceCode') }}</a></div>
     </footer>
   </div>
 </template>
@@ -259,5 +292,20 @@ section h2 { text-align: center; font-size: clamp(22px, 3vw, 30px); margin: 0 0 
 .t-name { font-weight: 700; font-size: 13px; color: #111; }
 .t-role { font-size: 11px; color: #999; }
 .testimonial-note { text-align: center; color: #aaa; font-size: 11px; margin-top: 16px; }
+
+
+/* Open source section */
+.opensource { padding: 70px 5vw; background: #fafafa; }
+.os-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; max-width: 1060px; margin: 0 auto; align-items: center; }
+.os-left h2 { text-align: left; font-size: clamp(22px, 3vw, 30px); margin: 0 0 14px; }
+.os-left p { font-size: 14px; color: #555; line-height: 1.8; margin: 0 0 22px; }
+.os-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.os-right { display: flex; }
+.os-code { background: #141414; border-radius: 12px; padding: 18px 22px; width: 100%; }
+.os-dots { display: flex; gap: 6px; margin-bottom: 14px; }
+.os-dots span { width: 10px; height: 10px; border-radius: 50%; background: #555; }
+.os-dots span:first-child { background: #FF4500; }
+.os-code pre { color: #d4d4d4; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.8; margin: 0; white-space: pre-wrap; }
+@media (max-width: 768px) { .os-grid { grid-template-columns: 1fr; } }
 
 </style>
