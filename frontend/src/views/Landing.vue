@@ -2,7 +2,7 @@
   <div class="landing">
     <!-- Nav -->
     <header class="nav">
-      <div class="nav-brand" @click="$router.push('/')" style="cursor:pointer"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:7px;flex-shrink:0"><rect width="32" height="32" rx="7" fill="#FF4500"/><line x1="8" y1="9" x2="14" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="18" y1="9" x2="24" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="8" y1="16" x2="24" y2="16" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.75"/><line x1="8" y1="23" x2="13" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="19" y1="23" x2="24" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>YANCEVA</div>
+      <div class="nav-brand" @click="$router.push('/')" style="cursor:pointer"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="display:block;flex-shrink:0;margin-right:8px"><rect width="32" height="32" rx="7" fill="#FF4500"/><circle cx="16" cy="16" r="10" stroke="white" stroke-width="2" fill="none" opacity="0.35"/><circle cx="16" cy="16" r="6" stroke="white" stroke-width="2" fill="none" opacity="0.65"/><circle cx="16" cy="16" r="3" fill="white"/><circle cx="23" cy="9" r="3" fill="white"/></svg>YANCEVA</div>
       <nav class="nav-links">
         <a href="#how">{{ $t('landing.navHow') }}</a>
         <a href="#pricing">{{ $t('landing.navPricing') }}</a>
@@ -125,7 +125,7 @@
         <router-link to="/terms">{{ $t('legal.terms') }}</router-link>
         <a href="mailto:support@example.com">{{ $t('legal.contact') }}</a>
       </div>
-      <div class="footer-note">© 2026 MiroFish Rehearsal Platform · {{ $t('landing.footerDisclaimer') }}</div>
+      <div class="footer-note">© 2026 Yanceva Rehearsal Platform · {{ $t('landing.footerDisclaimer') }}</div>
     </footer>
   </div>
 </template>
@@ -167,7 +167,7 @@ const faqs = computed(() => [
   padding: 16px 5vw; border-bottom: 1px solid #eee; position: sticky; top: 0;
   background: rgba(255,255,255,.95); backdrop-filter: blur(6px); z-index: 100;
 }
-.nav-brand { font-weight: 800; letter-spacing: 2px; color: #FF4500; }
+.nav-brand { font-weight: 800; letter-spacing: 2px; color: #FF4500; display: flex; align-items: center; cursor: pointer; }
 .nav-links { flex: 1; display: flex; gap: 22px; font-size: 14px; }
 .nav-links a { color: #333; text-decoration: none; }
 .nav-links a:hover { color: #FF4500; }

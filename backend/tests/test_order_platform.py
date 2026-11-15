@@ -55,7 +55,7 @@ def test_sku_has_intake_schema_and_budget(isolated_catalog):
     required = product.intake_schema.get("required", [])
     assert "product_name" in required and "launch_plan" in required
     assert product.budget["max_agents"] == 40
-    assert product.price_cents == 4900
+    assert product.price_cents == 2900
 
 
 def test_dev_sku_hidden_but_retrievable(isolated_catalog):

@@ -2,12 +2,9 @@
   <div class="home-container">
     <!-- 顶部导航栏 -->
     <nav class="navbar">
-      <div class="nav-brand" @click="$router.push('/')" style="cursor:pointer"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:7px;flex-shrink:0"><rect width="32" height="32" rx="7" fill="#FF4500"/><line x1="8" y1="9" x2="14" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="18" y1="9" x2="24" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="8" y1="16" x2="24" y2="16" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.75"/><line x1="8" y1="23" x2="13" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="19" y1="23" x2="24" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>YANCEVA</div>
+      <div class="nav-brand" @click="$router.push('/')" style="cursor:pointer"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="display:block;flex-shrink:0;margin-right:8px"><rect width="32" height="32" rx="7" fill="#FF4500"/><circle cx="16" cy="16" r="10" stroke="white" stroke-width="2" fill="none" opacity="0.35"/><circle cx="16" cy="16" r="6" stroke="white" stroke-width="2" fill="none" opacity="0.65"/><circle cx="16" cy="16" r="3" fill="white"/><circle cx="23" cy="9" r="3" fill="white"/></svg>YANCEVA</div>
       <div class="nav-links">
         <LanguageSwitcher />
-        <a href="https://github.com/666ghj/MiroFish" target="_blank" class="github-link">
-          {{ $t('nav.visitGithub') }} <span class="arrow">↗</span>
-        </a>
       </div>
     </nav>
 
@@ -44,7 +41,7 @@
         <div class="hero-right">
           <!-- Logo 区域 -->
           <div class="logo-container">
-            <img src="../assets/logo/MiroFish_logo_left.jpeg" alt="MiroFish Logo" class="hero-logo" />
+            <div style="font-size:64px;font-weight:800;color:#111;letter-spacing:-2px;">Yanceva</div>
           </div>
           
           <button class="scroll-down-btn" @click="scrollToBottom">
@@ -413,7 +410,7 @@ const startSimulation = () => {
   font-weight: 800;
   letter-spacing: 1px;
   font-size: 1.2rem;
-}
+ display: flex; align-items: center; cursor: pointer; }
 
 .nav-links {
   display: flex;

@@ -1,7 +1,7 @@
 <template>
   <div class="legal-page">
     <header class="legal-header">
-      <div class="brand" @click="$router.push('/')"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:7px;flex-shrink:0"><rect width="32" height="32" rx="7" fill="#FF4500"/><line x1="8" y1="9" x2="14" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="18" y1="9" x2="24" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="8" y1="16" x2="24" y2="16" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.75"/><line x1="8" y1="23" x2="13" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="19" y1="23" x2="24" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>YANCEVA</div>
+      <div class="brand" @click="$router.push('/')"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="display:block;flex-shrink:0;margin-right:8px"><rect width="32" height="32" rx="7" fill="#FF4500"/><circle cx="16" cy="16" r="10" stroke="white" stroke-width="2" fill="none" opacity="0.35"/><circle cx="16" cy="16" r="6" stroke="white" stroke-width="2" fill="none" opacity="0.65"/><circle cx="16" cy="16" r="3" fill="white"/><circle cx="23" cy="9" r="3" fill="white"/></svg>YANCEVA</div>
       <LanguageSwitcher />
     </header>
     <main class="legal-body">
@@ -34,19 +34,29 @@ const CONTENT = {
         targets, not commitments; if a run fails for technical reasons we will retry or refund.
         Due to the nature of AI generation, each rehearsal is unique and results may differ
         between runs.</p>`],
-      ['3. Acceptable use', `
+      ['3. Confidentiality', `
+        <p>We treat your uploaded materials and scenario descriptions as confidential business
+        information. They are used solely to execute your ordered rehearsal and are not used to
+        train models, build competitor scenarios for other customers, or shared with third
+        parties other than our processing providers (LLM API, payment processor).</p>`],
+      ['4. Permitted use of deliverables', `
+        <p>Deliverables are licensed for your internal business decision-making. You may not
+        republish reports as standalone research, present them as guarantees to third parties,
+        or use them as the sole basis for significant financial, legal or investment decisions
+        without independent professional advice.</p>`],
+      ['5. Acceptable use', `
         <p>You may not submit content that is illegal, infringes others' rights, contains
         personal data of third parties without consent, or targets real individuals with
         harassment simulations. You confirm you own or have the rights to the materials you
         upload.</p>`],
-      ['4. Intellectual property', `
+      ['6. Intellectual property', `
         <p>You retain all rights to the materials you upload. Deliverables produced for your
         order are licensed to you for commercial use. We retain the right to improve the
         platform using aggregated, de-identified usage statistics.</p>`],
-      ['5. Liability', `
+      ['7. Liability', `
         <p>The service is provided "as is". To the maximum extent permitted by law, our total
         liability for any claim is limited to the amount you paid for the order in question.</p>`],
-      ['6. Contact', `<p>Questions about these terms: support@example.com</p>`],
+      ['8. Contact', `<p>Questions about these terms: support@example.com</p>`],
     ],
   },
   zh: {
@@ -60,16 +70,24 @@ const CONTENT = {
         <p>订单在支付后进入执行队列，交付物为一份报告。交付时限为参考目标而非承诺；如因技术原因
         执行失败，我们将重试或退款。由于 AI 生成的特性，每次推演结果具有独特性，多次推演可能得出
         不同的结论。</p>`],
-      ['3. 合理使用', `
+      ['3. 保密承诺', `
+        <p>我们将您上传的资料与场景描述视为保密商业信息，仅用于执行您订购的推演服务。
+        不用于模型训练、不为其他客户构建竞品场景、不与处理服务商（LLM API、支付渠道）之外
+        的第三方共享。</p>`],
+      ['4. 交付物用途限制', `
+        <p>交付物授权用于您的内部商业决策参考。您不得将报告作为独立研究成果对外发布、
+        向第三方展示为保证性结论，或在未获得独立专业意见的情况下，将其作为重大财务、法律或
+        投资决策的唯一依据。</p>`],
+      ['5. 合理使用', `
         <p>您不得提交违法违规、侵犯他人权利、未经同意包含第三方个人数据的内容，或针对真实个人进行
         骚扰式模拟。您确认对上传的资料拥有合法权利。</p>`],
-      ['4. 知识产权', `
+      ['6. 知识产权', `
         <p>您上传资料的一切权利归您所有。为您订单生成的交付物授权您用于商业用途。我们保留使用
         匿名化汇总统计改进平台的权利。</p>`],
-      ['5. 责任限制', `
+      ['7. 责任限制', `
         <p>服务按"现状"提供。在法律允许的最大范围内，我们对任何索赔的责任上限为您为该订单
         实际支付的金额。</p>`],
-      ['6. 联系我们', `<p>关于本条款的疑问：support@example.com</p>`],
+      ['8. 联系我们', `<p>关于本条款的疑问：support@example.com</p>`],
     ],
   },
 }
@@ -83,8 +101,8 @@ const content = computed(() => {
 
 <style scoped>
 .legal-page { min-height: 100vh; background: #fff; font-family: 'Space Grotesk', 'Noto Sans SC', sans-serif; }
-.legal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; border-bottom: 1px solid #eee; }
-.brand { font-weight: 800; letter-spacing: 2px; color: #FF4500; cursor: pointer; }
+.legal-header { display: flex; align-items: center; justify-content: space-between; padding: 0 28px; height: 60px; border-bottom: 1px solid #eee; }
+.brand { font-weight: 800; letter-spacing: 2px; color: #FF4500; cursor: pointer;  display: flex; align-items: center; }
 .legal-body { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; line-height: 1.8; font-size: 14px; color: #222; }
 .legal-body :deep(h1) { font-size: 26px; }
 .legal-body :deep(h2) { font-size: 17px; margin-top: 30px; border-left: 3px solid #FF4500; padding-left: 10px; }

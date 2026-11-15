@@ -1,7 +1,7 @@
 <template>
   <div class="legal-page">
     <header class="legal-header">
-      <div class="brand" @click="$router.push('/')"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:7px;flex-shrink:0"><rect width="32" height="32" rx="7" fill="#FF4500"/><line x1="8" y1="9" x2="14" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="18" y1="9" x2="24" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="8" y1="16" x2="24" y2="16" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.75"/><line x1="8" y1="23" x2="13" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="19" y1="23" x2="24" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>YANCEVA</div>
+      <div class="brand" @click="$router.push('/')"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="display:block;flex-shrink:0;margin-right:8px"><rect width="32" height="32" rx="7" fill="#FF4500"/><circle cx="16" cy="16" r="10" stroke="white" stroke-width="2" fill="none" opacity="0.35"/><circle cx="16" cy="16" r="6" stroke="white" stroke-width="2" fill="none" opacity="0.65"/><circle cx="16" cy="16" r="3" fill="white"/><circle cx="23" cy="9" r="3" fill="white"/></svg>YANCEVA</div>
       <LanguageSwitcher />
     </header>
     <main class="legal-body">
@@ -83,8 +83,8 @@ const content = computed(() => {
 
 <style scoped>
 .legal-page { min-height: 100vh; background: #fff; font-family: 'Space Grotesk', 'Noto Sans SC', sans-serif; }
-.legal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; border-bottom: 1px solid #eee; }
-.brand { font-weight: 800; letter-spacing: 2px; color: #FF4500; cursor: pointer; }
+.legal-header { display: flex; align-items: center; justify-content: space-between; padding: 0 28px; height: 60px; border-bottom: 1px solid #eee; }
+.brand { font-weight: 800; letter-spacing: 2px; color: #FF4500; cursor: pointer;  display: flex; align-items: center; }
 .legal-body { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; line-height: 1.8; font-size: 14px; color: #222; }
 .legal-body :deep(h1) { font-size: 26px; }
 .legal-body :deep(h2) { font-size: 17px; margin-top: 30px; border-left: 3px solid #FF4500; padding-left: 10px; }

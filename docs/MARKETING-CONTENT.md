@@ -27,7 +27,7 @@
 
 ⚠️ 说明：这是 AI 模拟推演不是真实调研，但它帮你在花广告费之前排掉雷。
 
-$49 一次，比烧 500 块广告费测款便宜多了。
+$29 一次，比烧 500 块广告费测款便宜多了。
 
 #跨境电商 #亚马逊卖家 #新品上市 #AI工具 #选品
 
@@ -59,7 +59,7 @@ $49 一次，比烧 500 块广告费测款便宜多了。
 
 ---
 
-## 篇 3【小红书】我花 $19 让 5 个"AI 老外"骂了我的 Listing 一顿，值回票价
+## 篇 3【小红书】我花 $9 让 5 个"AI 老外"骂了我的 Listing 一顿，值回票价
 
 **目标人群**：跨境卖家 · **配套服务**：④ Listing 风险审查
 
@@ -76,7 +76,7 @@ $49 一次，比烧 500 块广告费测款便宜多了。
 🟡 中东买家："gift-ready packaging 需要配图证明"
 ✅ 美国买家：卖点清晰（就他没挑刺）
 
-报告给了逐句改写建议+合规清单，全程 5 分钟，$19。
+报告给了逐句改写建议+合规清单，全程 5 分钟，$9。
 
 比起listing 下架或者差评轰炸的损失，这顿"骂"太值了。
 
@@ -86,7 +86,7 @@ $49 一次，比烧 500 块广告费测款便宜多了。
 
 ---
 
-## 篇 4【Twitter/X · EN】I paid $19 to get roasted by 5 AI reviewers from 3 continents
+## 篇 4【Twitter/X · EN】I paid $9 to get roasted by 5 AI reviewers from 3 continents
 
 **目标人群**：海外 indie hackers/Etsy 卖家 · **配套服务**：④ Listing 风险审查
 
@@ -100,7 +100,7 @@ I run an Etsy shop. Before my next listing went live, I fed it to an AI review p
 ⚖️ Compliance → "'Medical grade' without certification = takedown risk" 🚨
 🛡️ Platform policy → "'100% guarantee' violates listing rules" 🚨
 
-Got a rewritten title + bullets + a compliance checklist. 5 minutes, $19.
+Got a rewritten title + bullets + a compliance checklist. 5 minutes, $9.
 
 It's a simulation — not legal advice. But it caught two things that would've cost me way more.
 
@@ -203,7 +203,7 @@ Then run the same shockwave with a different response. A/B your crisis playbook 
 
 Simulated predictions, not guarantees. But better than gut-feeling discounts.
 
-$99/run. Built on open-source multi-agent infra. Link in reply.
+$59/run. Built on open-source multi-agent infra. Link in reply.
 
 #DTC #ecommerce #competitor
 
@@ -257,7 +257,7 @@ $99/run. Built on open-source multi-agent infra. Link in reply.
 
 **4. 方法论说明 + 免责声明**：模拟了多少 Agent、多少轮、数据如何生成——我们希望你清楚这是模拟推演而非事实承诺。
 
-目前上线 6 个场景：电商新品上市、SaaS 定价、品牌危机、Listing 审查、竞品应对、创作者内容风险。$19-99 一次，无需订阅。
+目前上线 6 个场景：电商新品上市、SaaS 定价、品牌危机、Listing 审查、竞品应对、创作者内容风险。$9-99 一次，无需订阅。
 
 样例报告可在线查看（文末链接）。体验后欢迎告诉我们哪里像 AI 套话——我们会改。
 

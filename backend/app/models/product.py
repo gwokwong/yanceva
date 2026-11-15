@@ -222,7 +222,7 @@ def _seed_products() -> List[Product]:
             kind=KIND_SIMULATION,
             scenario="ecommerce",
             tagline="40 个消费者/KOL/竞品/媒体 Agent，48 小时市场推演，交付买家反应、差评风险、竞品反应与转化阻力报告",
-            price_cents=4900,
+            price_cents=2900,
             sla_minutes=120,
             deliverable_name="买家反应与转化阻力报告",
             intake_schema=_ECOMMERCE_INTAKE,
@@ -258,7 +258,7 @@ def _seed_products() -> List[Product]:
             kind=KIND_SIMULATION,
             scenario="ecommerce",
             tagline="60 个 Agent × 96 小时深度推演 + 2 个变量变体（如定价 A/B），附对比结论",
-            price_cents=9900,
+            price_cents=5900,
             sla_minutes=240,
             deliverable_name="买家反应与转化阻力报告（含 A/B 对比）",
             intake_schema=_ECOMMERCE_INTAKE,
@@ -303,7 +303,7 @@ def _seed_products() -> List[Product]:
             name="SaaS 定价/改版沙盘",
             scenario="saas_pricing",
             tagline="60 个 Agent（在用用户/流失用户/社区KOL/科技媒体/竞品）预演定价调整或大改版后的社区反应与流失风险",
-            price_cents=9900,
+            price_cents=5900,
             sla_minutes=240,
             deliverable_name="定价/改版风险与接受度报告",
             intake_schema={
@@ -336,7 +336,7 @@ def _seed_products() -> List[Product]:
             name="品牌危机回应预演",
             scenario="brand_crisis",
             tagline="60 个 Agent（受影响用户/吃瓜群众/记者/监管/KOL）预演危机传播路径与回应效果：话术 A/B、时点选择、二次引爆点预警",
-            price_cents=9900,
+            price_cents=5900,
             sla_minutes=240,
             deliverable_name="危机传播路径与回应策略报告",
             intake_schema={
@@ -423,7 +423,7 @@ def _seed_products() -> List[Product]:
             kind=KIND_REVIEW,
             scenario="listing_review",
             tagline="5 位市场/合规评审员（美国买家、德国买家、中东买家、合规官、平台审核）逐项审查：文化敏感点、合规风险、文案优化建议，约 5 分钟交付",
-            price_cents=1900,
+            price_cents=900,
             sla_minutes=15,
             deliverable_name="Listing 风险审查报告",
             intake_schema={
@@ -456,7 +456,7 @@ def _seed_products() -> List[Product]:
             name="竞品发布应对沙盘",
             scenario="competitor_response",
             tagline="60 个 Agent 预演竞品官宣冲击：用户流失风险、我方应对动作效果、KOL 与渠道反应报告",
-            price_cents=9900,
+            price_cents=5900,
             sla_minutes=240,
             deliverable_name="竞品应对策略报告",
             intake_schema={
@@ -543,7 +543,7 @@ class ProductManager:
     def ensure_seeded(cls) -> None:
         with cls._lock:
             data = cls._load()
-            if data.get("seed_version") == 5:
+            if data.get("seed_version") == 6:
                 return
             products = {p["product_id"]: p for p in data.get("products", [])}
             for product in _seed_products():
@@ -556,8 +556,8 @@ class ProductManager:
                     products[product.product_id] = merged
                 else:
                     products[product.product_id] = product.to_dict()
-            cls._save({"seed_version": 5, "products": list(products.values())})
-            logger.info("商品目录已播种/更新至 seed_version=5")
+            cls._save({"seed_version": 6, "products": list(products.values())})
+            logger.info("商品目录已播种/更新至 seed_version=6")
 
     @classmethod
     def get_product(cls, product_id: str) -> Optional[Product]:

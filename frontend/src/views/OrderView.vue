@@ -1,7 +1,7 @@
 <template>
   <div class="order-portal">
     <header class="portal-header">
-      <div class="brand" @click="$router.push('/')"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:7px;flex-shrink:0"><rect width="32" height="32" rx="7" fill="#FF4500"/><line x1="8" y1="9" x2="14" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="18" y1="9" x2="24" y2="9" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.45"/><line x1="8" y1="16" x2="24" y2="16" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.75"/><line x1="8" y1="23" x2="13" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="19" y1="23" x2="24" y2="23" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>YANCEVA</div>
+      <div class="brand" @click="$router.push('/')"><svg width="20" height="20" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="display:block;flex-shrink:0;margin-right:8px"><rect width="32" height="32" rx="7" fill="#FF4500"/><circle cx="16" cy="16" r="10" stroke="white" stroke-width="2" fill="none" opacity="0.35"/><circle cx="16" cy="16" r="6" stroke="white" stroke-width="2" fill="none" opacity="0.65"/><circle cx="16" cy="16" r="3" fill="white"/><circle cx="23" cy="9" r="3" fill="white"/></svg>YANCEVA</div>
       <div class="header-title">{{ $t('order.portalTitle') }}</div>
       <div class="header-actions">
         <LanguageSwitcher />
@@ -55,18 +55,23 @@
           </div>
           <div class="form-field">
             <label>{{ $t('order.contactEmail') }}</label>
-            <input v-model="userEmail" type="email" placeholder="you@example.com" />
+            <input v-model="userEmail" type="email" :placeholder="$t('order.emailPlaceholder')" />
           </div>
           <div class="form-field">
             <label>{{ $t('order.reportLanguage') }}</label>
             <select v-model="language" class="lang-select">
-              <option value="zh">中文报告</option>
-              <option value="en">English Report</option>
+              <option value="zh">{{ $t('order.reportLangZh') }}</option>
+              <option value="en">{{ $t('order.reportLangEn') }}</option>
             </select>
           </div>
           <div class="form-field span2">
             <label>{{ $t('order.seedFiles') }}</label>
-            <input type="file" multiple accept=".pdf,.md,.txt" @change="onFiles" />
+            <div class="file-upload-row">
+              <button type="button" class="file-btn" @click="$refs.fileInput.click()">{{ $t('order.chooseFiles') }}</button>
+              <span class="file-name" v-if="files.length">{{ files.map(f => f.name).join(', ') }}</span>
+              <span class="file-name dim" v-else>{{ $t('order.noFileChosen') }}</span>
+              <input ref="fileInput" type="file" multiple accept=".pdf,.md,.txt" style="display:none" @change="onFiles" />
+            </div>
             <div class="file-hint">{{ $t('order.seedFilesHint') }}</div>
           </div>
         </div>
@@ -157,6 +162,7 @@ const orders = ref([])
 const selectedProduct = ref(null)
 const form = ref({})
 const files = ref([])
+const fileInput = ref(null)
 const userEmail = ref(localStorage.getItem('order_email') || '')
 const language = ref(localStorage.getItem('order_language') || locale.value)
 const order = ref(null)
@@ -393,9 +399,11 @@ onUnmounted(stopPolling)
 
 .portal-header {
   display: flex; align-items: center; gap: 20px;
-  padding: 16px 28px; border-bottom: 1px solid #EAEAEA;
+  padding: 0 28px; height: 60px; border-bottom: 1px solid #EAEAEA;
+  position: sticky; top: 0; background: rgba(255,255,255,.97);
+  backdrop-filter: blur(6px); z-index: 100;
 }
-.brand { font-weight: 800; letter-spacing: 2px; cursor: pointer; color: #FF4500; }
+.brand { font-weight: 800; letter-spacing: 2px; cursor: pointer; color: #FF4500; display: flex; align-items: center; }
 .header-title { font-size: 15px; font-weight: 700; flex: 1; }
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .back-btn {
@@ -409,11 +417,12 @@ onUnmounted(stopPolling)
 
 .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .product-card {
-  text-align: left; border: 1px solid #E5E5E5; border-radius: 12px;
-  padding: 16px; cursor: pointer; background: #fff; transition: border-color .15s;
+  text-align: left; border: 2px solid #E5E5E5; border-radius: 12px;
+  padding: 16px; cursor: pointer; background: #fff;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
   display: flex; flex-direction: column; gap: 8px;
 }
-.product-card:hover { border-color: #FF4500; }
+.product-card:hover { border-color: #FF4500; transform: translateY(-4px); box-shadow: 0 6px 24px rgba(255, 69, 0, 0.12); }
 .product-name { font-weight: 700; font-size: 15px; }
 .product-tagline { font-size: 12px; color: #666; line-height: 1.6; flex: 1; }
 .product-foot { display: flex; justify-content: space-between; align-items: center; }
@@ -442,6 +451,14 @@ onUnmounted(stopPolling)
 }
 .form-field input:focus, .form-field textarea:focus { outline: none; border-color: #FF4500; }
 .file-hint { font-size: 11px; color: #999; }
+.file-upload-row { display: flex; align-items: center; gap: 10px; }
+.file-btn {
+  border: 1px solid #E5E5E5; background: #fff; border-radius: 6px;
+  padding: 6px 14px; font-size: 12px; cursor: pointer;
+}
+.file-btn:hover { border-color: #FF4500; color: #FF4500; }
+.file-name { font-size: 12px; color: #333; }
+.file-name.dim { color: #999; }
 .lang-select { border: 1px solid #E5E5E5; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
 
 .form-actions { display: flex; gap: 10px; margin-top: 18px; }
