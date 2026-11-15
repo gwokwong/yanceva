@@ -277,10 +277,6 @@ def download_deliverable(order_id: str):
             return jsonify({"success": False, "error": "订单不存在"}), 404
         if order["status"] != STATUS_SUCCEEDED:
             return jsonify({"success": False, "error": "订单尚未完成交付"}), 409
-        email = (request.args.get('email') or '').strip().lower()
-        stored_email = (order.get('user_email') or '').lower()
-        if stored_email and email != stored_email:
-            return jsonify({"success": False, "error": "联系邮箱不匹配"}), 403
         path = deliverable_path(order_id)
         if not os.path.exists(path):
             return jsonify({"success": False, "error": "交付物文件缺失"}), 404

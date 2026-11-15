@@ -50,5 +50,6 @@ export const cancelOrder = (orderId) => {
  */
 export const deliverableUrl = (orderId) => {
   const base = service.defaults.baseURL || ''
-  return `${base}/api/orders/${orderId}/deliverable`
+  const email = localStorage.getItem('order_email') || ''
+  return `${base}/api/orders/${orderId}/deliverable?email=${encodeURIComponent(email)}`
 }
